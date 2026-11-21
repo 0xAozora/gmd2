@@ -9,6 +9,7 @@ Glyph :: types.Glyph
 Artery_Advance :: types.Artery_Advance
 Artery_Glyph :: types.Artery_Glyph
 Y_Origin :: types.Y_Origin
+Status :: types.Status
 Atlas_View :: types.Atlas_View
 Artery_Atlas_View :: types.Artery_Atlas_View
 encode_bound :: encoder.encode_bound

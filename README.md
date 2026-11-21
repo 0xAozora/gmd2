@@ -27,12 +27,23 @@ size_t scratch_len = gmd2_encode_scratch_size(atlas.width, atlas.height, atlas.g
 /* Supply encoded and scratch buffers with the capacities above. */
 size_t written;
 int status = gmd2_encode(pixels, pixel_len, &atlas, 0, encoded, capacity,
-                         &written, scratch, scratch_len, NULL, 0);
+                         &written, scratch, scratch_len);
 ```
 
 On success, `written` is the stream length. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
 
-Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`. Encode and decode return `0` on success and `-1` on error. Pass `NULL, 0` for the optional error buffer and length.
+Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`.
+
+Encode and decode return `GMD2_OK` (0) on success or one of these status codes.
+
+| Status | Meaning |
+|---|---|
+| `GMD2_ERR_INVALID_ARGUMENT` | A required pointer, channel count, or pixel byte count is invalid. |
+| `GMD2_ERR_INVALID_LAYOUT` | The atlas dimensions or glyph data are invalid or disagree with the stream. |
+| `GMD2_ERR_INVALID_STREAM` | The raw GMD2 stream is malformed, truncated, or unsupported. |
+| `GMD2_ERR_OUTPUT_TOO_SMALL` | Increase the output buffer capacity. |
+| `GMD2_ERR_SCRATCH_TOO_SMALL` | Supply scratch sized by the scratch query. |
+| `GMD2_ERR_CHANNEL_MISMATCH` | The stream stores alpha. Request RGBA8 or automatic output. |
 
 ## Language bindings
 

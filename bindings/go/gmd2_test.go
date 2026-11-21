@@ -43,22 +43,22 @@ func TestFixtures(t *testing.T) {
 			src, dst := unsafe.SliceData(expected), unsafe.SliceData(decoded)
 			var written uint
 			if encoder.Encode(input, uint(len(pixels)), bottomAtlas, 0,
-				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch)), nil, 0) != 0 || !bytes.Equal(encoded[:written], expected) {
+				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("JSON glyph encoder differs from fixture")
 			}
 			if encoder.EncodeArtery(input, uint(len(pixels)), arteryAtlas, channels,
-				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch)), nil, 0) != 0 || !bytes.Equal(encoded[:written], expected) {
+				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("Artery glyph encoder differs from fixture")
 			}
 			if decoder.Decode(src, uint(len(expected)), topAtlas, 0,
-				dst, uint(len(decoded)), scratchPtr, uint(len(scratch)), nil, 0) != 0 || !bytes.Equal(decoded, pixels) {
+				dst, uint(len(decoded)), scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
 				t.Fatal("JSON glyph decoder differs from RGB fixture")
 			}
 			for i := range decoded {
 				decoded[i] = 0
 			}
 			if decoder.DecodeArtery(src, uint(len(expected)), arteryAtlas, channels,
-				dst, uint(len(decoded)), scratchPtr, uint(len(scratch)), nil, 0) != 0 || !bytes.Equal(decoded, pixels) {
+				dst, uint(len(decoded)), scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
 				t.Fatal("Artery glyph decoder differs from RGB fixture")
 			}
 		})
@@ -67,9 +67,10 @@ func TestFixtures(t *testing.T) {
 
 func TestShortOutput(t *testing.T) {
 	pixels := [3]byte{}
+	out := [1]byte{}
 	var written uint
 	atlas := AtlasView{Width: 1, Height: 1, YOrigin: OriginTop}
-	if encoder.Encode(&pixels[0], 3, atlas, 3, nil, 0, &written, nil, 0, nil, 0) == 0 || written != 0 {
+	if encoder.Encode(&pixels[0], 3, atlas, 3, &out[0], 0, &written, nil, 0) != ErrOutputTooSmall || written != 0 {
 		t.Fatal("expected a capacity error")
 	}
 }

@@ -10,6 +10,7 @@ Glyph :: types.Glyph
 Artery_Advance :: types.Artery_Advance
 Artery_Glyph :: types.Artery_Glyph
 Y_Origin :: types.Y_Origin
+Status :: types.Status
 Atlas_View :: types.Atlas_View
 Artery_Atlas_View :: types.Artery_Atlas_View
 
@@ -23,11 +24,9 @@ foreign codec {
 
     @(link_name="gmd2_decode")
     decode :: proc(data: [^]u8, length: c.size_t, atlas: ^Atlas_View, channels: c.uint,
-        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t,
-        error_text: [^]u8, error_len: c.size_t) -> c.int ---
+        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t) -> Status ---
 
     @(link_name="gmd2_decode_artery")
     decode_artery :: proc(data: [^]u8, length: c.size_t, atlas: ^Artery_Atlas_View, channels: c.uint,
-        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t,
-        error_text: [^]u8, error_len: c.size_t) -> c.int ---
+        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t) -> Status ---
 }

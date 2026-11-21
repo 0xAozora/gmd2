@@ -14,4 +14,12 @@ type ArteryAtlasView = types.ArteryAtlasView
 const (
 	OriginTop    = types.OriginTop
 	OriginBottom = types.OriginBottom
+
+	OK                 = types.OK
+	ErrInvalidArgument = types.ErrInvalidArgument
+	ErrInvalidLayout   = types.ErrInvalidLayout
+	ErrInvalidStream   = types.ErrInvalidStream
+	ErrOutputTooSmall  = types.ErrOutputTooSmall
+	ErrScratchTooSmall = types.ErrScratchTooSmall
+	ErrChannelMismatch = types.ErrChannelMismatch
 )

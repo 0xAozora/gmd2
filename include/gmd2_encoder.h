@@ -27,6 +27,17 @@ typedef struct {
 
 enum { GMD2_ORIGIN_TOP = 0, GMD2_ORIGIN_BOTTOM = 1 };
 
+/* Status codes returned by the encoder and decoder. */
+enum {
+    GMD2_OK = 0,
+    GMD2_ERR_INVALID_ARGUMENT = -1,
+    GMD2_ERR_INVALID_LAYOUT = -2,
+    GMD2_ERR_INVALID_STREAM = -3,
+    GMD2_ERR_OUTPUT_TOO_SMALL = -4,
+    GMD2_ERR_SCRATCH_TOO_SMALL = -5,
+    GMD2_ERR_CHANNEL_MISMATCH = -6
+};
+
 /* Views borrow the glyph array for the duration of a call. */
 typedef struct {
     uint32_t width, height;
@@ -65,8 +76,8 @@ extern "C" {
  * the output. Pixels are tightly packed, top-down, and in RGB or RGBA order.
  * Pass 3 or 4 channels, or 0 to infer channels from the exact pixel byte count.
  * Supply the first glyph and the number of elements. NULL is valid for zero glyphs.
- * Errors return -1 with optional text and set *written to zero.
- * On success, returns 0 and sets *written to the exact encoded byte count. */
+ * Errors return a GMD2_ERR_* code and set *written to zero.
+ * On success, returns GMD2_OK and sets *written to the exact encoded byte count. */
 /* Capacity for these dimensions, or 0 on error. For channels 0, bound RGBA8. */
 size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels);
 /* Required scratch bytes, or 0 for invalid dimensions or count. Scratch
@@ -74,10 +85,10 @@ size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels);
 size_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count);
 int gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
                 unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                void *scratch, size_t scratch_len, char *error, size_t error_len);
+                void *scratch, size_t scratch_len);
 int gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
                        unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                       void *scratch, size_t scratch_len, char *error, size_t error_len);
+                       void *scratch, size_t scratch_len);
 
 #ifdef __cplusplus
 }
@@ -171,17 +182,6 @@ static int gmd2_atlas_rectangle(Gmd2AtlasBounds bounds, uint32_t height,
     return 1;
 }
 
-static int gmd2_fail(char *err, size_t cap, const char *message) {
-    if (err && cap) {
-        size_t i = 0;
-        while (i + 1 < cap && message[i]) {
-            err[i] = message[i];
-            i++;
-        }
-        err[i] = 0;
-    }
-    return -1;
-}
 static int gmd2_glyph_cmp(const Gmd2GlyphRect *a, const Gmd2GlyphRect *b) {
     if (a->width!=b->width) return a->width>b->width?-1:1;
     if (a->height!=b->height) return a->height<b->height?-1:1;
@@ -234,20 +234,20 @@ static void gmd2_sort_glyphs(uint8_t *glyphs, size_t count) {
 
 static int gmd2_setup_traversal(uint32_t w, uint32_t h,
                                 Gmd2GlyphInput input, void *scratch, size_t scratch_len,
-                                Gmd2Traversal *t, char *err, size_t cap) {
+                                Gmd2Traversal *t) {
     size_t count = gmd2_pixel_count(w, h);
     size_t glyph_count = input.count;
     if (!count || (glyph_count && !input.glyphs) ||
         (input.format == GMD2_JSON_GLYPHS && input.y_origin > GMD2_ORIGIN_BOTTOM))
-        return gmd2_fail(err,cap,"invalid layout dimensions or glyph array");
+        return GMD2_ERR_INVALID_LAYOUT;
     size_t glyph_size = input.format == GMD2_JSON_GLYPHS ? sizeof(Gmd2Glyph) :
                         input.format == GMD2_ARTERY_GLYPHS ? sizeof(Gmd2ArteryGlyph) :
                         sizeof(Gmd2GlyphRect);
     size_t scratch_size = gmd2_scratch_size(w, h, glyph_count);
     if (!scratch_size || glyph_count > SIZE_MAX/glyph_size)
-        return gmd2_fail(err,cap,"too many glyphs");
+        return GMD2_ERR_INVALID_LAYOUT;
     if (!scratch || scratch_len < scratch_size)
-        return gmd2_fail(err,cap,"GMD2 scratch buffer is too small");
+        return GMD2_ERR_SCRATCH_TOO_SMALL;
     size_t glyph_bytes = glyph_count * sizeof(Gmd2GlyphRect);
     size_t covered_bytes = (count + 7) / 8;
     t->glyphs = (uint8_t*)scratch;
@@ -275,14 +275,14 @@ static int gmd2_setup_traversal(uint32_t w, uint32_t h,
                 bounds = record.image_bounds;
             }
             if (!gmd2_atlas_rectangle(bounds, h, input.y_origin, &g)) {
-                return gmd2_fail(err,cap,"invalid atlas glyph bounds");
+                return GMD2_ERR_INVALID_LAYOUT;
             }
             g.source_order = (uint32_t)i;
         }
         if (!g.width || !g.height) continue;
         if (g.x<0||g.y<0||(uint64_t)(uint32_t)g.x+g.width>w||
             (uint64_t)(uint32_t)g.y+g.height>h) {
-            return gmd2_fail(err,cap,"glyph rectangle is outside atlas");
+            return GMD2_ERR_INVALID_LAYOUT;
         }
         for (uint32_t y = 0; y < g.height; y++) {
             uint32_t row = ((uint32_t)g.y + y) * w + (uint32_t)g.x;
@@ -290,7 +290,7 @@ static int gmd2_setup_traversal(uint32_t w, uint32_t h,
                 uint32_t pos = row + x;
                 uint8_t mask = (uint8_t)(1u << (pos % 8));
                 if (t->covered[pos / 8] & mask) {
-                    return gmd2_fail(err,cap,"overlapping glyph rectangles");
+                    return GMD2_ERR_INVALID_LAYOUT;
                 }
                 t->covered[pos / 8] |= mask;
             }
@@ -298,7 +298,7 @@ static int gmd2_setup_traversal(uint32_t w, uint32_t h,
         gmd2_set_glyph(t->glyphs, t->glyph_count++, g);
     }
     gmd2_sort_glyphs(t->glyphs, t->glyph_count);
-    return 0;
+    return GMD2_OK;
 }
 
 static void gmd2_next_glyph(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
@@ -424,20 +424,22 @@ static int gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
                              uint32_t width, uint32_t height,
                              Gmd2GlyphInput glyphs, unsigned channels,
                              void *scratch, size_t scratch_len,
-                             uint8_t *out, size_t capacity, size_t *written,
-                             char *error, size_t error_len) {
+                             uint8_t *out, size_t capacity, size_t *written) {
     if (written) *written = 0;
+    if (!pixels || !out || !written || (channels && channels != 3 && channels != 4))
+        return GMD2_ERR_INVALID_ARGUMENT;
     size_t n = gmd2_pixel_count(width, height);
     if (!channels) channels = pixels_len == n * 4 ? 4 : 3;
-    if (!pixels || !out || !written || !gmd2_encode_bound(width, height, channels) ||
-        pixels_len != n * channels)
-        return gmd2_fail(error,error_len,"invalid input or pixel byte count");
+    if (!gmd2_encode_bound(width, height, channels))
+        return GMD2_ERR_INVALID_LAYOUT;
+    if (pixels_len != n * channels)
+        return GMD2_ERR_INVALID_ARGUMENT;
     if (capacity < GMD2_HEADER + n)
-        return gmd2_fail(error,error_len,"GMD2 output buffer is too small");
+        return GMD2_ERR_OUTPUT_TOO_SMALL;
 
     Gmd2Traversal t;
-    if (gmd2_setup_traversal(width, height, glyphs, scratch, scratch_len, &t, error, error_len))
-        return -1;
+    int status = gmd2_setup_traversal(width, height, glyphs, scratch, scratch_len, &t);
+    if (status != GMD2_OK) return status;
     uint8_t *body=out+GMD2_HEADER;
     int has_alpha=0;
     uint32_t shist[256]={0},ehist[256]={0};
@@ -534,32 +536,32 @@ static int gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
         }
         *written=total;
     }
-    if(total>capacity)return gmd2_fail(error,error_len,"GMD2 output buffer is too small");
-    return 0;
+    if(total>capacity)return GMD2_ERR_OUTPUT_TOO_SMALL;
+    return GMD2_OK;
 }
 
 int gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
                 unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                void *scratch, size_t scratch_len, char *error, size_t error_len) {
+                void *scratch, size_t scratch_len) {
     if (!atlas) {
         if (written) *written = 0;
-        return gmd2_fail(error, error_len, "missing atlas view");
+        return GMD2_ERR_INVALID_ARGUMENT;
     }
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_JSON_GLYPHS, atlas->y_origin, 0};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
-                              scratch, scratch_len, out, capacity, written, error, error_len);
+                              scratch, scratch_len, out, capacity, written);
 }
 
 int gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
                        unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                       void *scratch, size_t scratch_len, char *error, size_t error_len) {
+                       void *scratch, size_t scratch_len) {
     if (!atlas) {
         if (written) *written = 0;
-        return gmd2_fail(error, error_len, "missing atlas view");
+        return GMD2_ERR_INVALID_ARGUMENT;
     }
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_ARTERY_GLYPHS, GMD2_ORIGIN_BOTTOM, atlas->image_index};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
-                              scratch, scratch_len, out, capacity, written, error, error_len);
+                              scratch, scratch_len, out, capacity, written);
 }
 
 #endif

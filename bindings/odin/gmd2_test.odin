@@ -47,18 +47,18 @@ fixtures :: proc(t: ^testing.T) {
 		written: c.size_t
 
 		testing.expect(t, encode(raw_data(pixels), pixel_count, &bottom_atlas, 0,
-			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size, nil, 0) == 0)
+			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size) == .Ok)
 		testing.expect(t, bytes.equal(encoded[:written], expected))
 		testing.expect(t, encode_artery(raw_data(pixels), pixel_count, &artery_atlas, channels,
-			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size, nil, 0) == 0)
+			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size) == .Ok)
 		testing.expect(t, bytes.equal(encoded[:written], expected))
 
 		testing.expect(t, decode(raw_data(expected), stream_count, &top_atlas, 0,
-			raw_data(decoded), pixel_count, raw_data(scratch), scratch_size, nil, 0) == 0)
+			raw_data(decoded), pixel_count, raw_data(scratch), scratch_size) == .Ok)
 		testing.expect(t, bytes.equal(decoded, pixels))
 		for &pixel in decoded { pixel = 0 }
 		testing.expect(t, decode_artery(raw_data(expected), stream_count, &artery_atlas, channels,
-			raw_data(decoded), pixel_count, raw_data(scratch), scratch_size, nil, 0) == 0)
+			raw_data(decoded), pixel_count, raw_data(scratch), scratch_size) == .Ok)
 		testing.expect(t, bytes.equal(decoded, pixels))
 	}
 }

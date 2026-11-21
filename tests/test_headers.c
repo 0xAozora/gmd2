@@ -80,9 +80,9 @@ int main(void) {
     memset(storage, 0xff, sizeof(storage));
 
     assert(!gmd2_encode(rgb, sizeof(rgb), &atlas, 0,
-                        encoded, sizeof(encoded), &rgb_len, scratch, scratch_len, NULL, 0));
+                        encoded, sizeof(encoded), &rgb_len, scratch, scratch_len));
     assert(!gmd2_encode(rgba, sizeof(rgba), &atlas, 0,
-                        other, sizeof(other), &rgba_len, scratch, scratch_len, NULL, 0));
+                        other, sizeof(other), &rgba_len, scratch, scratch_len));
     assert(rgb_len == rgba_len && !memcmp(encoded, other, rgb_len));
     assert(gmd2_decode_size(encoded, rgb_len, 0) == sizeof(rgb));
     assert(gmd2_decode_size(encoded, rgb_len, 4) == sizeof(rgba));
@@ -91,64 +91,71 @@ int main(void) {
 
     memset(decoded, 0, sizeof(decoded));
     assert(!gmd2_decode(encoded, rgb_len, &atlas, 0,
-                        decoded, sizeof(decoded), scratch, scratch_len, NULL, 0));
+                        decoded, sizeof(decoded), scratch, scratch_len));
     assert(!memcmp(rgb, decoded, sizeof(rgb)) && decoded[sizeof(rgb)] == 0);
     assert(!gmd2_decode(encoded, rgb_len, &atlas, 4,
-                        decoded, sizeof(decoded), scratch, scratch_len, NULL, 0));
+                        decoded, sizeof(decoded), scratch, scratch_len));
     assert(!memcmp(rgba, decoded, sizeof(rgba)));
 
     for (size_t i = 0; i < N; i++) rgba[4*i+3] = (uint8_t)(i*13);
     assert(!gmd2_encode(rgba, sizeof(rgba), &atlas, 0,
-                        encoded, sizeof(encoded), &rgba_len, scratch, scratch_len, NULL, 0));
+                        encoded, sizeof(encoded), &rgba_len, scratch, scratch_len));
     assert(rgba_len == rgb_len + N);
     assert(gmd2_decode_size(encoded, 18, 0) == sizeof(rgba));
     assert(!gmd2_decode_size(encoded, rgba_len, 3));
     assert(!gmd2_decode(encoded, rgba_len, &atlas, 0,
-                        decoded, sizeof(decoded), scratch, scratch_len, NULL, 0));
+                        decoded, sizeof(decoded), scratch, scratch_len));
     assert(!memcmp(rgba, decoded, sizeof(rgba)) && storage[0] == 0xff);
 
     size_t written;
     assert(gmd2_encode(rgba, sizeof(rgba), &atlas, 4,
-                        other, sizeof(other), &written, scratch, scratch_len - 1, NULL, 0) == -1);
+                        other, sizeof(other), &written, scratch, scratch_len - 1) == GMD2_ERR_SCRATCH_TOO_SMALL);
     assert(written == 0);
     assert(gmd2_encode(rgba, sizeof(rgba) - 1, &atlas, 0,
-                        other, sizeof(other), &written, scratch, scratch_len, NULL, 0) == -1);
+                        other, sizeof(other), &written, scratch, scratch_len) == GMD2_ERR_INVALID_ARGUMENT);
     assert(written == 0);
     assert(gmd2_encode(rgba, sizeof(rgba), &atlas, 4,
-                        other, rgba_len - 1, &written, scratch, scratch_len, NULL, 0) == -1);
+                        other, rgba_len - 1, &written, scratch, scratch_len) == GMD2_ERR_OUTPUT_TOO_SMALL);
     assert(written == 0);
 
     memset(decoded, 0, sizeof(decoded));
     assert(gmd2_decode(encoded, rgba_len, &atlas, 4,
-                        decoded, sizeof(decoded), scratch, scratch_len - 1, NULL, 0) == -1);
+                        decoded, sizeof(decoded), scratch, scratch_len - 1) == GMD2_ERR_SCRATCH_TOO_SMALL);
     assert(decoded[3] == 0 && decoded[sizeof(decoded) - 1] == 0);
     assert(gmd2_decode(encoded, rgba_len, &atlas, 4,
-                        decoded, sizeof(decoded), NULL, scratch_len, NULL, 0) == -1);
+                        decoded, sizeof(decoded), NULL, scratch_len) == GMD2_ERR_SCRATCH_TOO_SMALL);
     assert(gmd2_decode(encoded, rgba_len, &atlas, 3,
-                        decoded, sizeof(decoded), scratch, scratch_len, NULL, 0) == -1);
+                        decoded, sizeof(decoded), scratch, scratch_len) == GMD2_ERR_CHANNEL_MISMATCH);
     assert(gmd2_decode(encoded, rgba_len - 1, &atlas, 4,
-                        decoded, sizeof(decoded), scratch, scratch_len, NULL, 0) == -1);
+                        decoded, sizeof(decoded), scratch, scratch_len) == GMD2_ERR_INVALID_STREAM);
     assert(gmd2_decode(encoded, rgba_len, &atlas, 4,
-                        decoded, sizeof(decoded) - 1, scratch, scratch_len, NULL, 0) == -1);
+                        decoded, sizeof(decoded) - 1, scratch, scratch_len) == GMD2_ERR_OUTPUT_TOO_SMALL);
     encoded[13] = 0;
     assert(!gmd2_decode_size(encoded, rgba_len, 0));
+    assert(gmd2_decode(encoded, rgba_len, &atlas, 0, decoded, sizeof(decoded),
+                       scratch, scratch_len) == GMD2_ERR_INVALID_STREAM);
 
     assert(!gmd2_encode(rgb, sizeof(rgb), &empty_atlas, 3,
-                        encoded, sizeof(encoded), &rgb_len, scratch, scratch_len, NULL, 0));
+                        encoded, sizeof(encoded), &rgb_len, scratch, scratch_len));
     assert(!gmd2_decode(encoded, rgb_len, &empty_atlas, 3,
-                        decoded, sizeof(rgb), scratch, scratch_len, NULL, 0));
+                        decoded, sizeof(rgb), scratch, scratch_len));
     assert(!memcmp(rgb, decoded, sizeof(rgb)));
 
     assert(gmd2_encode(rgb, sizeof(rgb), NULL, 3, encoded, sizeof(encoded),
-                       &written, scratch, scratch_len, NULL, 0) == -1);
+                       &written, scratch, scratch_len) == GMD2_ERR_INVALID_ARGUMENT);
     assert(written == 0);
     assert(gmd2_decode(encoded, rgb_len, NULL, 3, decoded, sizeof(rgb),
-                       scratch, scratch_len, NULL, 0) == -1);
+                       scratch, scratch_len) == GMD2_ERR_INVALID_ARGUMENT);
 
-    char short_error[6] = {0, 0, 0, 0, 0, 'x'};
     assert(gmd2_decode(NULL, 0, &empty_atlas, 3, decoded, sizeof(rgb),
-                        scratch, scratch_len, short_error, 5) == -1);
-    assert(!memcmp(short_error, "inva\0x", sizeof(short_error)));
+                       scratch, scratch_len) == GMD2_ERR_INVALID_ARGUMENT);
+    Gmd2AtlasView bad_atlas = atlas;
+    bad_atlas.y_origin = 2;
+    assert(gmd2_encode(rgb, sizeof(rgb), &bad_atlas, 3, encoded, sizeof(encoded),
+                       &written, scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
+    assert(written == 0);
+    assert(gmd2_decode(encoded, rgb_len, &bad_atlas, 3, decoded, sizeof(rgb),
+                       scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
     puts("OK: raw RGB8 and RGBA8, channel detection, scratch sizes, and msdf-atlas-gen JSON");
     return 0;
 }

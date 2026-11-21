@@ -2,6 +2,16 @@
 //! lengths and remain valid during the call. Output must be writable and disjoint
 //! from input. The glyph count is the number of records.
 
+use std::ffi::c_int;
+
+pub const OK: c_int = 0;
+pub const ERR_INVALID_ARGUMENT: c_int = -1;
+pub const ERR_INVALID_LAYOUT: c_int = -2;
+pub const ERR_INVALID_STREAM: c_int = -3;
+pub const ERR_OUTPUT_TOO_SMALL: c_int = -4;
+pub const ERR_SCRATCH_TOO_SMALL: c_int = -5;
+pub const ERR_CHANNEL_MISMATCH: c_int = -6;
+
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct Bounds {
@@ -74,7 +84,6 @@ pub use decoder::{decode, decode_artery, decode_scratch_size, decode_size};
 #[cfg(all(test, any(feature = "encoder", feature = "decoder")))]
 mod tests {
     use super::*;
-    use std::ptr::null_mut;
 
     const BOTTOM_BOUNDS: Bounds = Bounds {
         left: 0.5,
@@ -140,11 +149,9 @@ mod tests {
                     &mut written,
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
-                    null_mut(),
-                    0,
                 )
             };
-            assert_eq!(status, 0);
+            assert_eq!(status, OK);
             assert_eq!(&encoded[..written], expected);
             let status = unsafe {
                 encode_artery(
@@ -157,11 +164,9 @@ mod tests {
                     &mut written,
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
-                    null_mut(),
-                    0,
                 )
             };
-            assert_eq!(status, 0);
+            assert_eq!(status, OK);
             assert_eq!(&encoded[..written], expected);
         }
     }
@@ -207,11 +212,9 @@ mod tests {
                     decoded.len(),
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
-                    null_mut(),
-                    0,
                 )
             };
-            assert_eq!(status, 0);
+            assert_eq!(status, OK);
             assert_eq!(decoded, expected);
             decoded.fill(0);
             let status = unsafe {
@@ -224,11 +227,9 @@ mod tests {
                     decoded.len(),
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
-                    null_mut(),
-                    0,
                 )
             };
-            assert_eq!(status, 0);
+            assert_eq!(status, OK);
             assert_eq!(decoded, expected);
         }
     }
