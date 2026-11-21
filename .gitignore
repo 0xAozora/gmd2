@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+/.local-fixtures/
+
+/gmd2tool
+/gmd2_decoder.wasm
+/gmd2_encoder.wasm
+/include/gmd2_*.h.tmp
+/tests/build.log
+/tests/test_headers
+/tests/reencoded.gmd2
+/tests/roundtrip_reference.rgb
+/tests/roundtrip_reencoded.rgb
+
+/bindings/odin/*/gmd2.o
+/bindings/odin/*/libgmd2.a
+/bindings/rust/target/

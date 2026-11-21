@@ -1,0 +1,114 @@
+# GMD2
+
+GMD2 is a lossless codec for RGB8 MSDF and RGBA8 MTSDF atlases. It ships as two standalone C headers with Odin, Go, and Rust bindings. The core emits raw GMD2 bytes that you can store directly or compress separately.
+
+## C API
+
+Copy [gmd2_encoder.h](include/gmd2_encoder.h), [gmd2_decoder.h](include/gmd2_decoder.h), or both. For each header you use, define its implementation macro (`GMD2_ENCODER_IMPLEMENTATION` or `GMD2_DECODER_IMPLEMENTATION`) in one translation unit before including it.
+
+| Glyph records | Atlas view | Encoder | Decoder |
+|---|---|---|---|
+| Parsed msdf-atlas-gen JSON, `Gmd2Glyph` | `Gmd2AtlasView` with `y_origin` | `gmd2_encode` | `gmd2_decode` |
+| Parsed Artery Font, `Gmd2ArteryGlyph` | `Gmd2ArteryAtlasView` with `image_index` | `gmd2_encode_artery` | `gmd2_decode_artery` |
+
+Pass tightly packed, top-down pixels and use the same glyph layout for encoding and decoding. Set `y_origin` from the JSON metadata. Artery bounds use a bottom origin. The view borrows the glyph array for the call. For an empty array, pass `NULL` and a count of zero.
+
+```c
+Gmd2AtlasView atlas = {
+    .width = width,
+    .height = height,
+    .glyphs = glyphs,
+    .glyph_count = glyph_count,
+    .y_origin = GMD2_ORIGIN_TOP,
+};
+size_t capacity = gmd2_encode_bound(atlas.width, atlas.height, 0);
+size_t scratch_len = gmd2_encode_scratch_size(atlas.width, atlas.height, atlas.glyph_count);
+
+/* Supply encoded and scratch buffers with the capacities above. */
+size_t written;
+int status = gmd2_encode(pixels, pixel_len, &atlas, 0, encoded, capacity,
+                         &written, scratch, scratch_len, NULL, 0);
+```
+
+On success, `written` is the stream length. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
+
+Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`. Encode and decode return `0` on success and `-1` on error. Pass `NULL, 0` for the optional error buffer and length.
+
+## Language bindings
+
+| Language | Encoder only | Decoder only |
+|---|---|---|
+| Odin | Run `make odin-encoder` and import `bindings/odin/encoder` | Run `make odin-decoder` and import `bindings/odin/decoder` |
+| Go | Import `gmd2/encoder` | Import `gmd2/decoder` |
+| Rust | Enable `encoder` with default features disabled | Enable `decoder` with default features disabled |
+
+For both codecs, run `make odin` and import `bindings/odin`, import both Go packages, or use the default Rust features. Go uses cgo, and Rust exposes unsafe FFI functions.
+
+In Odin, you can build the view from your existing slice. Cast the glyph pointer when your own record matches `gmd2.Glyph` in layout, and keep the slice alive through the call.
+
+```odin
+atlas := gmd2.Atlas_View{
+    Width = font.AtlasData.Width,
+    Height = font.AtlasData.Height,
+    Glyphs = cast([^]gmd2.Glyph)raw_data(font.Glyphs),
+    Glyph_Count = c.size_t(len(font.Glyphs)),
+    Y_Origin = .Bottom, // Match the metadata.
+}
+```
+
+## WebAssembly
+
+Build a decoder-only module with Zig.
+
+```sh
+zig cc -target wasm32-wasi -Oz -c bindings/decoder.c -o gmd2_decoder.o
+zig cc -target wasm32-wasi -nostdlib -Wl,--no-entry -Wl,--strip-all \
+  -Wl,-z,stack-size=65536 -Wl,--export=__heap_base \
+  -Wl,--export=gmd2_decode -Wl,--export=gmd2_decode_size \
+  -Wl,--export=gmd2_decode_scratch_size gmd2_decoder.o -o gmd2_decoder.wasm
+```
+
+This build has zero host imports with Zig 0.16.0. Grow the exported `memory` as needed, then place buffers and the atlas view in disjoint regions at or above `__heap_base`. Pass their byte offsets as pointers. The wasm32 atlas view is five little-endian 32-bit fields in order of width, height, glyph pointer, glyph count, and Y origin. For Artery, export `gmd2_decode_artery` and use the image index in the last field.
+
+## Archive CLI
+
+The optional CLI compresses the RGB8 GMD2 body with Zstd and takes a separate msdf-atlas-gen JSON or `FontLayoutMsgp` MessagePack layout. Build it with a C11 compiler, libzstd, and libm.
+
+```sh
+make gmd2tool
+fixture=tests/fixtures/jetbrains-mono
+./gmd2tool encode "$fixture/atlas.rgb" "$fixture/layout.json" atlas.gmd2 22
+./gmd2tool decode atlas.gmd2 "$fixture/layout.json" restored.rgb
+cmp "$fixture/atlas.rgb" restored.rgb
+```
+
+To generate your own inputs, use `msdf-atlas-gen` with `-type msdf -yorigin top -format bin` and supply both `-imageout` and `-json`.
+
+| JetBrains Mono RGB8 atlas, 236 × 236 | Bytes |
+|---|---:|
+| Original pixels | 167,088 |
+| Raw GMD2 | 78,011 |
+| Archive CLI with Zstd level 22 | 30,324 |
+| JSON layout, supplied separately | 21,018 |
+
+The JetBrains Mono fixture includes the SIL Open Font License 1.1 and its generation command. [Fixture provenance and license](tests/fixtures/jetbrains-mono/)
+
+## Development
+
+Run `make headers` after editing [src/gmd2_codec.in](src/gmd2_codec.in). When packaging both codecs into one static archive, compile `bindings/encoder.c` and `bindings/decoder.c` as separate objects so the linker can select the one the caller uses.
+
+The Python tests require `msgpack`.
+
+```sh
+make check
+python3 tests/test_edge_cases.py
+make odin
+odin test bindings/odin
+(cd bindings/go && go test ./...)
+cargo test --manifest-path bindings/rust/Cargo.toml
+```
+
+## Format and research
+
+- Historical RGB8 Zstd archive format and C implementation notes. [Markdown](docs/GMD2_Format_and_C_Implementation.md) · [PDF](docs/GMD2_Format_and_C_Implementation.pdf)
+- Adelle Mono research and benchmark results. [Markdown](docs/GMD2_Research_Report.md) · [PDF](docs/GMD2_Research_Report.pdf)
