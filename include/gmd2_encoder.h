@@ -336,12 +336,13 @@ static inline Gmd2Pixel gmd2_next_outside_pixel(const Gmd2Traversal *t, Gmd2Curs
     while (t->covered[pos / 8] & (1u << (pos % 8)))
         pos++;
     cursor->pos = pos + 1;
-    uint32_t x = pos % w, y = pos / w;
+    uint32_t x = pos % w;
+    int has_above = pos >= w;
     pixel.pos = pos;
     pixel.left = x ? pos - 1 : UINT32_MAX;
-    pixel.above = y ? pos - w : UINT32_MAX;
-    pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
-    pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
+    pixel.above = has_above ? pos - w : UINT32_MAX;
+    pixel.upper_left = x && has_above ? pos - w - 1 : UINT32_MAX;
+    pixel.above2 = pos / 2 >= w ? pos - 2*w : UINT32_MAX;
     return pixel;
 }
 

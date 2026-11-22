@@ -336,12 +336,13 @@ static inline Gmd2Pixel gmd2_next_outside_pixel(const Gmd2Traversal *t, Gmd2Curs
     while (t->covered[pos / 8] & (1u << (pos % 8)))
         pos++;
     cursor->pos = pos + 1;
-    uint32_t x = pos % w, y = pos / w;
+    uint32_t x = pos % w;
+    int has_above = pos >= w;
     pixel.pos = pos;
     pixel.left = x ? pos - 1 : UINT32_MAX;
-    pixel.above = y ? pos - w : UINT32_MAX;
-    pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
-    pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
+    pixel.above = has_above ? pos - w : UINT32_MAX;
+    pixel.upper_left = x && has_above ? pos - w - 1 : UINT32_MAX;
+    pixel.above2 = pos / 2 >= w ? pos - 2*w : UINT32_MAX;
     return pixel;
 }
 
@@ -476,9 +477,17 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
     Gmd2Traversal t;
     int status = gmd2_setup_traversal(width, height, glyphs, scratch, scratch_len, &t);
     if (status != GMD2_OK) return status;
-    const uint8_t *er=body+n, *sr=er+nexception, *esc=sr+nshared;
+    /* Start residual cursors one byte early so masked reads stay in bounds. */
+    const uint8_t *er=body+n-1, *sr=er+nexception, *esc=sr+nshared+1;
     const uint8_t *alpha=body+rgb_len;
-    if (channels == 4 && !alpha_len) memset(out, 255, 4 * n);
+    const int predicted_alpha = flags & GMD2_ALPHA_MEDIAN;
+    if (channels == 4 && !predicted_alpha) {
+        if (alpha_len) {
+            for (size_t i = 0; i < n; i++) out[4*i+3] = alpha[i];
+        } else {
+            memset(out, 255, 4 * n);
+        }
+    }
     uint8_t shared_channels[4];
     for (int mk=0; mk<4; mk++)
         shared_channels[mk]=(uint8_t)gmd2_shared_channel(data[12],mk);
@@ -517,7 +526,7 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
             if(mode==GMD2_ESCAPE_MODE) {
                 memcpy(px,esc,3);
                 esc+=3;
-                median = flags & GMD2_ALPHA_MEDIAN ? gmd2_rgb_median(px) : 0;
+                median = predicted_alpha ? gmd2_rgb_median(px) : 0;
             } else {
                 int mk=mode&3,sm=(mode>>2)&7,em=mode>>5;
                 int c=shared_channels[mk];
@@ -529,8 +538,9 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
                     int l=left[c],
                         u=above[c],
                         ul=upper_left[c];
-                    v=gmd2_paeth(l,u,ul);
-                    if(sm==5)v=(uint8_t)(v+*sr++);
+                    unsigned residual = sm == 5;
+                    sr += residual;
+                    v = (uint8_t)(gmd2_paeth(l,u,ul) + (*sr & (0u - residual)));
                 }
                 px[0]=px[1]=px[2]=v;
                 /* The shared value occurs at least twice in RGB. */
@@ -547,18 +557,14 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
                         int l=left[c],
                             u=above[c],
                             ul=upper_left[c];
-                        v=(uint8_t)(l+u-ul);
-                        if(em==5)v=(uint8_t)(v+*er++);
+                        unsigned residual = em == 5;
+                        er += residual;
+                        v = (uint8_t)(l+u-ul + (*er & (0u - residual)));
                     }
                     px[c]=v;
                 }
             }
-            if (alpha_len) {
-                if (flags & GMD2_ALPHA_MEDIAN)
-                    px[3] = (uint8_t)(median + *alpha++);
-                else
-                    px[3] = alpha[pos+x];
-            }
+            if (predicted_alpha) px[3] = (uint8_t)(median + *alpha++);
             left = px;
             upper_left = above;
             above += above_step;

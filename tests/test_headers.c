@@ -68,10 +68,29 @@ static void test_mode_validation(void) {
     }
 }
 
+static void test_residual_boundaries(void) {
+    const Gmd2AtlasView atlas = {4, 1, NULL, 0, GMD2_ORIGIN_TOP};
+    uint8_t stream[] = {
+        'G', 'M', 'D', '2', 4, 0, 0, 0, 1, 0, 0, 0, 18, GMD2_RAW, 0, 0, 0, 0,
+        10, 71, 176, 71, 17, 29
+    };
+    const uint8_t expected[] = {0, 0, 0, 0, 0, 0, 17, 29, 29, 17, 29, 29};
+    uint8_t out[sizeof(expected)], scratch[1];
+    assert(gmd2_decode(stream, sizeof(stream), &atlas, 3,
+                       out, sizeof(out), scratch, sizeof(scratch)) == GMD2_OK);
+    assert(!memcmp(out, expected, sizeof(out)));
+
+    stream[GMD2_HEADER + 2] = 71;
+    assert(gmd2_decode(stream, sizeof(stream) - 2, &atlas, 3,
+                       out, sizeof(out), scratch, sizeof(scratch)) == GMD2_OK);
+    assert(!memcmp(out, (uint8_t[sizeof(out)]){0}, sizeof(out)));
+}
+
 int main(void) {
     test_atlas_rectangles();
     test_json();
     test_mode_validation();
+    test_residual_boundaries();
     enum { W = 5, H = 4, N = W*H };
     const Gmd2Glyph glyphs[] = {
         {.index = 7, .atlas_bounds = {1, 3, 3, 1}},
