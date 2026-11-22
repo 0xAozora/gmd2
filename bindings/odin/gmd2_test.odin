@@ -44,14 +44,13 @@ fixtures :: proc(t: ^testing.T) {
 		defer delete(scratch)
 		pixel_count, stream_count := c.size_t(len(pixels)), c.size_t(len(expected))
 		capacity := c.size_t(len(encoded))
-		written: c.size_t
 
-		testing.expect(t, encode(raw_data(pixels), pixel_count, &bottom_atlas, 0,
-			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size) == .Ok)
-		testing.expect(t, bytes.equal(encoded[:written], expected))
-		testing.expect(t, encode_artery(raw_data(pixels), pixel_count, &artery_atlas, channels,
-			raw_data(encoded), capacity, &written, raw_data(scratch), scratch_size) == .Ok)
-		testing.expect(t, bytes.equal(encoded[:written], expected))
+		written := encode(raw_data(pixels), pixel_count, &bottom_atlas, 0,
+			raw_data(encoded), capacity, raw_data(scratch), scratch_size)
+		testing.expect(t, written == i32(len(expected)) && bytes.equal(encoded[:written], expected))
+		written = encode_artery(raw_data(pixels), pixel_count, &artery_atlas, channels,
+			raw_data(encoded), capacity, raw_data(scratch), scratch_size)
+		testing.expect(t, written == i32(len(expected)) && bytes.equal(encoded[:written], expected))
 
 		testing.expect(t, decode(raw_data(expected), stream_count, &top_atlas, 0,
 			raw_data(decoded), pixel_count, raw_data(scratch), scratch_size) == .Ok)

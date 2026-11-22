@@ -137,8 +137,7 @@ mod tests {
             let pixels: Vec<u8> = (0..4 * channels).map(|i| (i * 13) as u8).collect();
             let mut encoded = vec![0; unsafe { encode_bound(2, 2, 0) }];
             let mut scratch = vec![0_u8; unsafe { encode_scratch_size(2, 2, 2) }];
-            let mut written = 0;
-            let status = unsafe {
+            let written = unsafe {
                 encode(
                     pixels.as_ptr(),
                     pixels.len(),
@@ -146,14 +145,13 @@ mod tests {
                     0,
                     encoded.as_mut_ptr(),
                     encoded.len(),
-                    &mut written,
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
                 )
             };
-            assert_eq!(status, OK);
-            assert_eq!(&encoded[..written], expected);
-            let status = unsafe {
+            assert_eq!(written, expected.len() as i32);
+            assert_eq!(&encoded[..written as usize], expected);
+            let written = unsafe {
                 encode_artery(
                     pixels.as_ptr(),
                     pixels.len(),
@@ -161,13 +159,12 @@ mod tests {
                     channels,
                     encoded.as_mut_ptr(),
                     encoded.len(),
-                    &mut written,
                     scratch.as_mut_ptr().cast(),
                     scratch.len(),
                 )
             };
-            assert_eq!(status, OK);
-            assert_eq!(&encoded[..written], expected);
+            assert_eq!(written, expected.len() as i32);
+            assert_eq!(&encoded[..written as usize], expected);
         }
     }
 

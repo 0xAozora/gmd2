@@ -1,7 +1,7 @@
 //! Direct encoder functions.
 
 use super::{ArteryAtlasView, AtlasView};
-use std::ffi::{c_int, c_uint, c_void};
+use std::ffi::{c_uint, c_void};
 
 extern "C" {
     #[link_name = "gmd2_encode_bound"]
@@ -18,10 +18,9 @@ extern "C" {
         channels: c_uint,
         out: *mut u8,
         capacity: usize,
-        written: *mut usize,
         scratch: *mut c_void,
         scratch_len: usize,
-    ) -> c_int;
+    ) -> i32;
 
     #[link_name = "gmd2_encode_artery"]
     pub fn encode_artery(
@@ -31,8 +30,7 @@ extern "C" {
         channels: c_uint,
         out: *mut u8,
         capacity: usize,
-        written: *mut usize,
         scratch: *mut c_void,
         scratch_len: usize,
-    ) -> c_int;
+    ) -> i32;
 }

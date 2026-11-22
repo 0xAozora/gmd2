@@ -76,19 +76,19 @@ extern "C" {
  * the output. Pixels are tightly packed, top-down, and in RGB or RGBA order.
  * Pass 3 or 4 channels, or 0 to infer channels from the exact pixel byte count.
  * Supply the first glyph and the number of elements. NULL is valid for zero glyphs.
- * Errors return a GMD2_ERR_* code and set *written to zero.
- * On success, returns GMD2_OK and sets *written to the exact encoded byte count. */
-/* Capacity for these dimensions, or 0 on error. For channels 0, bound RGBA8. */
+ * Returns the positive encoded byte count on success or a GMD2_ERR_* code. */
+/* Capacity for these dimensions, or 0 if invalid or above INT32_MAX.
+ * For channels 0, bound RGBA8. */
 size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels);
 /* Required scratch bytes, or 0 for invalid dimensions or count. Scratch
  * can have any alignment and must be disjoint from the other buffers. */
 size_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count);
-int gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
-                unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                void *scratch, size_t scratch_len);
-int gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
-                       unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                       void *scratch, size_t scratch_len);
+int32_t gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
+                    unsigned channels, uint8_t *out, size_t capacity,
+                    void *scratch, size_t scratch_len);
+int32_t gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
+                           unsigned channels, uint8_t *out, size_t capacity,
+                           void *scratch, size_t scratch_len);
 
 #ifdef __cplusplus
 }
@@ -321,47 +321,37 @@ static Gmd2Cursor gmd2_start_cursor(const Gmd2Traversal *t) {
     return cursor;
 }
 
-/* Emit atlas offsets in symbol order. Every offset used by a predictor has
- * already been visited. The outer loop visits exactly width * height pixels. */
-static inline Gmd2Pixel gmd2_next_pixel(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
+/* Advance within the current glyph row, possibly reaching the next row. */
+static inline void gmd2_advance_glyph_row(const Gmd2Traversal *t, Gmd2Cursor *cursor, uint32_t count) {
+    cursor->pos += count;
+    cursor->x += count;
+    if (cursor->x == cursor->glyph_width) {
+        cursor->x = 0;
+        if (++cursor->y == cursor->glyph_height)
+            gmd2_next_glyph(t, cursor);
+        else
+            cursor->pos -= t->width + cursor->glyph_width;
+    }
+}
+
+static inline Gmd2Pixel gmd2_next_outside_pixel(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
     uint32_t w = t->width;
     Gmd2Pixel pixel;
-    if (cursor->glyph_width) {
-        uint32_t x = cursor->x, y = cursor->y;
-        uint32_t pos = cursor->pos++;
-        /* The previous glyph row in traversal order is below this atlas row. */
-        pixel.pos = pos;
-        pixel.left = x ? pos - 1 : UINT32_MAX;
-        pixel.above = y ? pos + w : UINT32_MAX;
-        pixel.upper_left = x && y ? pos + w - 1 : UINT32_MAX;
-        pixel.above2 = y > 1 ? pos + 2*w : UINT32_MAX;
-        if (++cursor->x == cursor->glyph_width) {
-            cursor->x = 0;
-            if (++cursor->y == cursor->glyph_height)
-                gmd2_next_glyph(t, cursor);
-            else
-                cursor->pos -= w + cursor->glyph_width;
-        }
-    } else {
-        /* Neighbors at earlier atlas offsets are either in completed glyphs
-         * or in the already visited part of the row-major outside region. */
-        uint32_t pos = cursor->pos;
-        while (t->covered[pos / 8] & (1u << (pos % 8)))
-            pos++;
-        cursor->pos = pos + 1;
-        uint32_t x = pos % w, y = pos / w;
-        pixel.pos = pos;
-        pixel.left = x ? pos - 1 : UINT32_MAX;
-        pixel.above = y ? pos - w : UINT32_MAX;
-        pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
-        pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
-    }
+    /* Neighbors at earlier atlas offsets are either in completed glyphs
+     * or in the already visited part of the row-major outside region. */
+    uint32_t pos = cursor->pos;
+    while (t->covered[pos / 8] & (1u << (pos % 8)))
+        pos++;
+    cursor->pos = pos + 1;
+    uint32_t x = pos % w, y = pos / w;
+    pixel.pos = pos;
+    pixel.left = x ? pos - 1 : UINT32_MAX;
+    pixel.above = y ? pos - w : UINT32_MAX;
+    pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
+    pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
     return pixel;
 }
-static inline int gmd2_neighbor(const uint8_t *pixels, unsigned channels,
-                                uint32_t pos, int channel) {
-    return pos == UINT32_MAX ? 0 : pixels[channels * (size_t)pos + channel];
-}
+
 static inline uint8_t gmd2_paeth(int a,int b,int c) {
     int p=a+b-c,da=abs(p-a),db=abs(p-b),dc=abs(p-c);
     return (uint8_t)((da<=db&&da<=dc)?a:(db<=dc?b:c));
@@ -377,6 +367,36 @@ static inline int gmd2_shared_channel(int mapid,int mk) {
 }
 #endif
 
+/* The previous glyph row in traversal order is below this atlas row. */
+static inline Gmd2Pixel gmd2_glyph_pixel(uint32_t w, uint32_t pos, uint32_t x, uint32_t y) {
+    Gmd2Pixel pixel;
+    pixel.pos = pos;
+    pixel.left = x ? pos - 1 : UINT32_MAX;
+    pixel.above = y ? pos + w : UINT32_MAX;
+    pixel.upper_left = x && y ? pos + w - 1 : UINT32_MAX;
+    pixel.above2 = y > 1 ? pos + 2*w : UINT32_MAX;
+    return pixel;
+}
+
+/* Emit atlas offsets in symbol order. Every offset used by a predictor has
+ * already been visited. The outer loop visits exactly width * height pixels. */
+static inline Gmd2Pixel gmd2_next_pixel(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
+    uint32_t w = t->width;
+    Gmd2Pixel pixel;
+    if (cursor->glyph_width) {
+        uint32_t x = cursor->x, y = cursor->y;
+        uint32_t pos = cursor->pos;
+        pixel = gmd2_glyph_pixel(w, pos, x, y);
+        gmd2_advance_glyph_row(t, cursor, 1);
+    } else {
+        pixel = gmd2_next_outside_pixel(t, cursor);
+    }
+    return pixel;
+}
+static inline int gmd2_neighbor(const uint8_t *pixels, unsigned channels,
+                                uint32_t pos, int channel) {
+    return pos == UINT32_MAX ? 0 : pixels[channels * (size_t)pos + channel];
+}
 static void gmd2_store32le(uint8_t *p, uint32_t v) {
     p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8);
     p[2]=(uint8_t)(v>>16); p[3]=(uint8_t)(v>>24);
@@ -408,7 +428,7 @@ static void gmd2_top_palette(const uint32_t counts[256], uint8_t palette[2]) {
     palette[1] = (uint8_t)second;
 }
 
-size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels) {
+static size_t gmd2_raw_bound(uint32_t width, uint32_t height, unsigned channels) {
     if (!channels) channels = 4;
     if (channels != 3 && channels != 4) return 0;
     size_t n = gmd2_pixel_count(width, height);
@@ -416,17 +436,95 @@ size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels) {
     return GMD2_HEADER + (channels + 1) * n;
 }
 
+size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels) {
+    size_t bound = gmd2_raw_bound(width, height, channels);
+    return bound <= INT32_MAX ? bound : 0;
+}
+
 size_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count) {
     return gmd2_scratch_size(width, height, glyph_count);
 }
 
-static int gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
+enum { GMD2_TAIL_SHARED = 1, GMD2_TAIL_EXCEPTION = 2, GMD2_TAIL_ESCAPE = 4 };
+
+/* Each group of 30 symbols ends in the shared-residual mode. */
+#define GMD2_FIVE(f) f, f, f, f, f
+#define GMD2_TAIL_GROUP(f, escape) \
+    f, f, f, f, escape, GMD2_FIVE(f), GMD2_FIVE(f), GMD2_FIVE(f), \
+    GMD2_FIVE(f), GMD2_FIVE((f) | GMD2_TAIL_SHARED)
+static const uint8_t gmd2_tail_flags[] = {
+    GMD2_TAIL_GROUP(0, GMD2_TAIL_ESCAPE),
+    GMD2_TAIL_GROUP(0, 0),
+    GMD2_TAIL_GROUP(0, 0),
+    GMD2_TAIL_GROUP(0, 0),
+    GMD2_TAIL_GROUP(0, 0),
+    GMD2_TAIL_GROUP(GMD2_TAIL_EXCEPTION, GMD2_TAIL_EXCEPTION)
+};
+#undef GMD2_TAIL_GROUP
+#undef GMD2_FIVE
+
+typedef struct {
+    uint8_t *exception, *shared, *escape;
+} Gmd2Tail;
+
+static inline void gmd2_write_tail(Gmd2Tail *tail, const uint8_t *pixels, unsigned channels,
+                                   uint8_t symbol, unsigned flags, Gmd2Pixel pixel) {
+    const uint8_t *px = pixels + channels * (size_t)pixel.pos;
+    if (flags == GMD2_TAIL_ESCAPE) {
+        memcpy(tail->escape, px, 3);
+        tail->escape += 3;
+        return;
+    }
+    int mask = symbol % 5;
+    if (flags & GMD2_TAIL_SHARED) {
+        int c = gmd2_shared_channel(18, mask);
+        int l = gmd2_neighbor(pixels, channels, pixel.left, c),
+            u = gmd2_neighbor(pixels, channels, pixel.above, c),
+            ul = gmd2_neighbor(pixels, channels, pixel.upper_left, c);
+        *tail->shared++ = (uint8_t)(px[c] - gmd2_paeth(l, u, ul));
+    }
+    if (flags & GMD2_TAIL_EXCEPTION) {
+        int c = mask - 1;
+        int l = gmd2_neighbor(pixels, channels, pixel.left, c),
+            u = gmd2_neighbor(pixels, channels, pixel.above, c),
+            ul = gmd2_neighbor(pixels, channels, pixel.upper_left, c);
+        *tail->exception++ = (uint8_t)(px[c] - (l + u - ul));
+    }
+}
+
+static void gmd2_replay_symbols(const Gmd2Traversal *t, const uint8_t *pixels, unsigned channels,
+                                const uint8_t *symbols, size_t count,
+                                uint8_t *er, uint8_t *sr, uint8_t *esc) {
+    Gmd2Tail tail = {er, sr, esc};
+    Gmd2Cursor cursor = gmd2_start_cursor(t);
+    size_t i = 0;
+    while (cursor.glyph_width) {
+        /* Each glyph row is contiguous in both the atlas and symbol order. */
+        for (uint32_t x = 0; x < cursor.glyph_width; x++) {
+            uint8_t symbol = symbols[i++];
+            unsigned flags = gmd2_tail_flags[symbol];
+            if (flags) {
+                Gmd2Pixel pixel = gmd2_glyph_pixel(t->width, cursor.pos + x, x, cursor.y);
+                gmd2_write_tail(&tail, pixels, channels, symbol, flags, pixel);
+            }
+        }
+        gmd2_advance_glyph_row(t, &cursor, cursor.glyph_width);
+    }
+    for (; i < count; i++) {
+        Gmd2Pixel pixel = gmd2_next_pixel(t, &cursor);
+        uint8_t symbol = symbols[i];
+        unsigned flags = gmd2_tail_flags[symbol];
+        if (flags)
+            gmd2_write_tail(&tail, pixels, channels, symbol, flags, pixel);
+    }
+}
+
+static int32_t gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
                              uint32_t width, uint32_t height,
                              Gmd2GlyphInput glyphs, unsigned channels,
                              void *scratch, size_t scratch_len,
-                             uint8_t *out, size_t capacity, size_t *written) {
-    if (written) *written = 0;
-    if (!pixels || !out || !written || (channels && channels != 3 && channels != 4))
+                             uint8_t *out, size_t capacity) {
+    if (!pixels || !out || (channels && channels != 3 && channels != 4))
         return GMD2_ERR_INVALID_ARGUMENT;
     size_t n = gmd2_pixel_count(width, height);
     if (!channels) channels = pixels_len == n * 4 ? 4 : 3;
@@ -504,64 +602,32 @@ static int gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
          * escapes straight to their final locations in the caller's buffer. */
         if (ne || ns || nx) {
             uint8_t *er=body+n, *sr=er+ne, *esc=sr+ns;
-            Gmd2Cursor replay=gmd2_start_cursor(&t);
-            for (uint32_t i=0; i<n; i++) {
-                Gmd2Pixel pixel=gmd2_next_pixel(&t,&replay);
-                const uint8_t *px=pixels+channels*(size_t)pixel.pos;
-                uint8_t symbol=body[i];
-                if (symbol==GMD2_ESCAPE_SYMBOL) {
-                    memcpy(esc,px,3);
-                    esc+=3;
-                } else {
-                    /* The last shared mode in each exception group stores a residual. */
-                    if (symbol%30>=25) {
-                        int c=gmd2_shared_channel(18,symbol%5);
-                        int l=gmd2_neighbor(pixels,channels,pixel.left,c),
-                            u=gmd2_neighbor(pixels,channels,pixel.above,c),
-                            ul=gmd2_neighbor(pixels,channels,pixel.upper_left,c);
-                        *sr++=(uint8_t)(px[c]-gmd2_paeth(l,u,ul));
-                    }
-                    if (symbol>=150) {
-                        int c=symbol%5-1;
-                        int l=gmd2_neighbor(pixels,channels,pixel.left,c),
-                            u=gmd2_neighbor(pixels,channels,pixel.above,c),
-                            ul=gmd2_neighbor(pixels,channels,pixel.upper_left,c);
-                        *er++=(uint8_t)(px[c]-(l+u-ul));
-                    }
-                }
-            }
+            gmd2_replay_symbols(&t, pixels, channels, body, n, er, sr, esc);
         }
         if(has_alpha) {
             for(size_t i=0;i<n;i++) body[rgb_len+i]=pixels[4*i+3];
         }
-        *written=total;
     }
     if(total>capacity)return GMD2_ERR_OUTPUT_TOO_SMALL;
-    return GMD2_OK;
+    return (int32_t)total;
 }
 
-int gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
-                unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                void *scratch, size_t scratch_len) {
-    if (!atlas) {
-        if (written) *written = 0;
-        return GMD2_ERR_INVALID_ARGUMENT;
-    }
+int32_t gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
+                    unsigned channels, uint8_t *out, size_t capacity,
+                    void *scratch, size_t scratch_len) {
+    if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_JSON_GLYPHS, atlas->y_origin, 0};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
-                              scratch, scratch_len, out, capacity, written);
+                              scratch, scratch_len, out, capacity);
 }
 
-int gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
-                       unsigned channels, uint8_t *out, size_t capacity, size_t *written,
-                       void *scratch, size_t scratch_len) {
-    if (!atlas) {
-        if (written) *written = 0;
-        return GMD2_ERR_INVALID_ARGUMENT;
-    }
+int32_t gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
+                           unsigned channels, uint8_t *out, size_t capacity,
+                           void *scratch, size_t scratch_len) {
+    if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_ARTERY_GLYPHS, GMD2_ORIGIN_BOTTOM, atlas->image_index};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
-                              scratch, scratch_len, out, capacity, written);
+                              scratch, scratch_len, out, capacity);
 }
 
 #endif

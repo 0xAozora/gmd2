@@ -27,7 +27,7 @@ int gmd2_archive_decode(const uint8_t *archive, size_t length, const Gmd2Metadat
                 uint8_t **out, size_t *out_len, char *error, size_t error_len) {
     if (out) *out = NULL;
     if (out_len) *out_len = 0;
-    size_t bound = layout ? gmd2_encode_bound(layout->width, layout->height, 3) : 0;
+    size_t bound = layout ? gmd2_raw_bound(layout->width, layout->height, 3) : 0;
     if (!archive || !bound || !out || !out_len || length < GMD2_HEADER)
         return archive_fail(error, error_len, "invalid input or truncated GMD2 archive");
     if (memcmp(archive, "GMD2", 4) || archive[13] != 0 || archive[12] >= 24)
@@ -99,14 +99,13 @@ int gmd2_archive_encode(const uint8_t *rgb, size_t rgb_len, const Gmd2Metadata *
         free(raw);
         return archive_fail(error, error_len, "out of memory");
     }
-    size_t raw_len;
     Gmd2GlyphInput glyphs = {layout->glyphs, layout->glyph_count, GMD2_RECTANGLES, 0, 0};
-    int status = gmd2_encode_pixels(rgb, rgb_len, layout->width, layout->height, glyphs, 3,
-                                     scratch, scratch_len, raw, capacity, &raw_len);
+    int32_t raw_len = gmd2_encode_pixels(rgb, rgb_len, layout->width, layout->height, glyphs, 3,
+                                         scratch, scratch_len, raw, capacity);
     free(scratch);
-    if (status != GMD2_OK) {
+    if (raw_len < 0) {
         free(raw);
-        return archive_fail(error, error_len, codec_error(status));
+        return archive_fail(error, error_len, codec_error(raw_len));
     }
 
     size_t body_len = raw_len - GMD2_HEADER;

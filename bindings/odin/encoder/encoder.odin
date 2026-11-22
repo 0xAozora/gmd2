@@ -24,9 +24,9 @@ foreign codec {
 
     @(link_name="gmd2_encode")
     encode :: proc(pixels: [^]u8, length: c.size_t, atlas: ^Atlas_View, channels: c.uint,
-        out: [^]u8, capacity: c.size_t, written: ^c.size_t, scratch: rawptr, scratch_len: c.size_t) -> Status ---
+        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t) -> i32 ---
 
     @(link_name="gmd2_encode_artery")
     encode_artery :: proc(pixels: [^]u8, length: c.size_t, atlas: ^Artery_Atlas_View, channels: c.uint,
-        out: [^]u8, capacity: c.size_t, written: ^c.size_t, scratch: rawptr, scratch_len: c.size_t) -> Status ---
+        out: [^]u8, capacity: c.size_t, scratch: rawptr, scratch_len: c.size_t) -> i32 ---
 }

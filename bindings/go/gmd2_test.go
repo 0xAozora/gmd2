@@ -41,13 +41,12 @@ func TestFixtures(t *testing.T) {
 			scratchPtr := unsafe.SliceData(scratch)
 			input, out := unsafe.SliceData(pixels), unsafe.SliceData(encoded)
 			src, dst := unsafe.SliceData(expected), unsafe.SliceData(decoded)
-			var written uint
-			if encoder.Encode(input, uint(len(pixels)), bottomAtlas, 0,
-				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(encoded[:written], expected) {
+			if written := encoder.Encode(input, uint(len(pixels)), bottomAtlas, 0,
+				out, uint(len(encoded)), scratchPtr, uint(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("JSON glyph encoder differs from fixture")
 			}
-			if encoder.EncodeArtery(input, uint(len(pixels)), arteryAtlas, channels,
-				out, uint(len(encoded)), &written, scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(encoded[:written], expected) {
+			if written := encoder.EncodeArtery(input, uint(len(pixels)), arteryAtlas, channels,
+				out, uint(len(encoded)), scratchPtr, uint(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("Artery glyph encoder differs from fixture")
 			}
 			if decoder.Decode(src, uint(len(expected)), topAtlas, 0,
@@ -68,9 +67,8 @@ func TestFixtures(t *testing.T) {
 func TestShortOutput(t *testing.T) {
 	pixels := [3]byte{}
 	out := [1]byte{}
-	var written uint
 	atlas := AtlasView{Width: 1, Height: 1, YOrigin: OriginTop}
-	if encoder.Encode(&pixels[0], 3, atlas, 3, &out[0], 0, &written, nil, 0) != ErrOutputTooSmall || written != 0 {
+	if encoder.Encode(&pixels[0], 3, atlas, 3, &out[0], 0, nil, 0) != ErrOutputTooSmall {
 		t.Fatal("expected a capacity error")
 	}
 }

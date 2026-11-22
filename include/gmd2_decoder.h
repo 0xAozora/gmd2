@@ -320,47 +320,37 @@ static Gmd2Cursor gmd2_start_cursor(const Gmd2Traversal *t) {
     return cursor;
 }
 
-/* Emit atlas offsets in symbol order. Every offset used by a predictor has
- * already been visited. The outer loop visits exactly width * height pixels. */
-static inline Gmd2Pixel gmd2_next_pixel(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
+/* Advance within the current glyph row, possibly reaching the next row. */
+static inline void gmd2_advance_glyph_row(const Gmd2Traversal *t, Gmd2Cursor *cursor, uint32_t count) {
+    cursor->pos += count;
+    cursor->x += count;
+    if (cursor->x == cursor->glyph_width) {
+        cursor->x = 0;
+        if (++cursor->y == cursor->glyph_height)
+            gmd2_next_glyph(t, cursor);
+        else
+            cursor->pos -= t->width + cursor->glyph_width;
+    }
+}
+
+static inline Gmd2Pixel gmd2_next_outside_pixel(const Gmd2Traversal *t, Gmd2Cursor *cursor) {
     uint32_t w = t->width;
     Gmd2Pixel pixel;
-    if (cursor->glyph_width) {
-        uint32_t x = cursor->x, y = cursor->y;
-        uint32_t pos = cursor->pos++;
-        /* The previous glyph row in traversal order is below this atlas row. */
-        pixel.pos = pos;
-        pixel.left = x ? pos - 1 : UINT32_MAX;
-        pixel.above = y ? pos + w : UINT32_MAX;
-        pixel.upper_left = x && y ? pos + w - 1 : UINT32_MAX;
-        pixel.above2 = y > 1 ? pos + 2*w : UINT32_MAX;
-        if (++cursor->x == cursor->glyph_width) {
-            cursor->x = 0;
-            if (++cursor->y == cursor->glyph_height)
-                gmd2_next_glyph(t, cursor);
-            else
-                cursor->pos -= w + cursor->glyph_width;
-        }
-    } else {
-        /* Neighbors at earlier atlas offsets are either in completed glyphs
-         * or in the already visited part of the row-major outside region. */
-        uint32_t pos = cursor->pos;
-        while (t->covered[pos / 8] & (1u << (pos % 8)))
-            pos++;
-        cursor->pos = pos + 1;
-        uint32_t x = pos % w, y = pos / w;
-        pixel.pos = pos;
-        pixel.left = x ? pos - 1 : UINT32_MAX;
-        pixel.above = y ? pos - w : UINT32_MAX;
-        pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
-        pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
-    }
+    /* Neighbors at earlier atlas offsets are either in completed glyphs
+     * or in the already visited part of the row-major outside region. */
+    uint32_t pos = cursor->pos;
+    while (t->covered[pos / 8] & (1u << (pos % 8)))
+        pos++;
+    cursor->pos = pos + 1;
+    uint32_t x = pos % w, y = pos / w;
+    pixel.pos = pos;
+    pixel.left = x ? pos - 1 : UINT32_MAX;
+    pixel.above = y ? pos - w : UINT32_MAX;
+    pixel.upper_left = x && y ? pos - w - 1 : UINT32_MAX;
+    pixel.above2 = y > 1 ? pos - 2*w : UINT32_MAX;
     return pixel;
 }
-static inline int gmd2_neighbor(const uint8_t *pixels, unsigned channels,
-                                uint32_t pos, int channel) {
-    return pos == UINT32_MAX ? 0 : pixels[channels * (size_t)pos + channel];
-}
+
 static inline uint8_t gmd2_paeth(int a,int b,int c) {
     int p=a+b-c,da=abs(p-a),db=abs(p-b),dc=abs(p-c);
     return (uint8_t)((da<=db&&da<=dc)?a:(db<=dc?b:c));
@@ -478,47 +468,79 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
     uint8_t shared_channels[4];
     for (int mk=0; mk<4; mk++)
         shared_channels[mk]=(uint8_t)gmd2_shared_channel(data[12],mk);
-    Gmd2Cursor cursor=gmd2_start_cursor(&t);
-    for(uint32_t i=0;i<n;i++) {
-        unsigned mode=modes[body[i]];
-        Gmd2Pixel pixel=gmd2_next_pixel(&t,&cursor);
-        uint8_t *px=out+channels*(size_t)pixel.pos;
-        if(channels==4)px[3]=alpha_len?alpha[pixel.pos]:255;
-        if(mode==GMD2_ESCAPE_MODE) {
-            memcpy(px,esc,3);
-            esc+=3;
-            continue;
+    static const uint8_t zero[3] = {0, 0, 0};
+    size_t stride = channels * (size_t)width;
+    Gmd2Cursor cursor = gmd2_start_cursor(&t);
+    for (size_t i = 0; i < n;) {
+        /* Glyphs are visited one row at a time. Outside glyphs, use one pixel. */
+        uint32_t pos, span;
+        const uint8_t *left, *upper_left, *prev, *prev2;
+        if (cursor.glyph_width) {
+            pos = cursor.pos;
+            span = cursor.glyph_width;
+            const uint8_t *row = out + channels * (size_t)pos;
+            left = upper_left = zero;
+            prev = cursor.y ? row + stride : NULL;
+            prev2 = cursor.y > 1 ? row + 2 * stride : NULL;
+            gmd2_advance_glyph_row(&t, &cursor, span);
+        } else {
+            Gmd2Pixel pixel = gmd2_next_outside_pixel(&t, &cursor);
+            pos = pixel.pos;
+            span = 1;
+            left = pixel.left == UINT32_MAX ? zero : out + channels * (size_t)pixel.left;
+            upper_left = pixel.upper_left == UINT32_MAX ? zero : out + channels * (size_t)pixel.upper_left;
+            prev = pixel.above == UINT32_MAX ? NULL : out + channels * (size_t)pixel.above;
+            prev2 = pixel.above2 == UINT32_MAX ? NULL : out + channels * (size_t)pixel.above2;
         }
-        int mk=mode&3,sm=(mode>>2)&7,em=mode>>5;
-        int c=shared_channels[mk];
-        uint8_t v;
-        if(sm<2)v=data[14+sm];
-        else if(sm==3)v=(uint8_t)gmd2_neighbor(out,channels,pixel.left,c);
-        else if(sm==4)v=(uint8_t)gmd2_neighbor(out,channels,pixel.above,c);
-        else {
-            int l=gmd2_neighbor(out,channels,pixel.left,c),
-                u=gmd2_neighbor(out,channels,pixel.above,c),
-                ul=gmd2_neighbor(out,channels,pixel.upper_left,c);
-            v=gmd2_paeth(l,u,ul);
-            if(sm==5)v=(uint8_t)(v+*sr++);
-        }
-        px[0]=px[1]=px[2]=v;
-        if(mk>0) {
-            c=mk-1;
-            if(em<2)v=data[16+em];
-            else if(em==3)v=(uint8_t)gmd2_neighbor(out,channels,pixel.left,c);
-            else if(em==4) {
-                int u=gmd2_neighbor(out,channels,pixel.above,c),
-                    uu=gmd2_neighbor(out,channels,pixel.above2,c);
-                v=(uint8_t)(2*u-uu);
+        uint8_t *px = out + channels * (size_t)pos;
+        /* Missing predictor rows stay at the zero pixel as the span advances. */
+        const uint8_t *above = prev ? prev : zero;
+        const uint8_t *above2 = prev2 ? prev2 : zero;
+        unsigned above_step = prev ? channels : 0;
+        unsigned above2_step = prev2 ? channels : 0;
+        for (uint32_t x = 0; x < span; x++, px += channels) {
+            unsigned mode = modes[body[i++]];
+            if (channels == 4) px[3] = alpha_len ? alpha[pos+x] : 255;
+            if(mode==GMD2_ESCAPE_MODE) {
+                memcpy(px,esc,3);
+                esc+=3;
             } else {
-                int l=gmd2_neighbor(out,channels,pixel.left,c),
-                    u=gmd2_neighbor(out,channels,pixel.above,c),
-                    ul=gmd2_neighbor(out,channels,pixel.upper_left,c);
-                v=(uint8_t)(l+u-ul);
-                if(em==5)v=(uint8_t)(v+*er++);
+                int mk=mode&3,sm=(mode>>2)&7,em=mode>>5;
+                int c=shared_channels[mk];
+                uint8_t v;
+                if(sm<2)v=data[14+sm];
+                else if(sm==3)v=(uint8_t)left[c];
+                else if(sm==4)v=(uint8_t)above[c];
+                else {
+                    int l=left[c],
+                        u=above[c],
+                        ul=upper_left[c];
+                    v=gmd2_paeth(l,u,ul);
+                    if(sm==5)v=(uint8_t)(v+*sr++);
+                }
+                px[0]=px[1]=px[2]=v;
+                if(mk>0) {
+                    c=mk-1;
+                    if(em<2)v=data[16+em];
+                    else if(em==3)v=(uint8_t)left[c];
+                    else if(em==4) {
+                        int u=above[c],
+                            uu=above2[c];
+                        v=(uint8_t)(2*u-uu);
+                    } else {
+                        int l=left[c],
+                            u=above[c],
+                            ul=upper_left[c];
+                        v=(uint8_t)(l+u-ul);
+                        if(em==5)v=(uint8_t)(v+*er++);
+                    }
+                    px[c]=v;
+                }
             }
-            px[c]=v;
+            left = px;
+            upper_left = above;
+            above += above_step;
+            above2 += above2_step;
         }
     }
     return GMD2_OK;

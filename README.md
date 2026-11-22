@@ -25,16 +25,15 @@ size_t capacity = gmd2_encode_bound(atlas.width, atlas.height, 0);
 size_t scratch_len = gmd2_encode_scratch_size(atlas.width, atlas.height, atlas.glyph_count);
 
 /* Supply encoded and scratch buffers with the capacities above. */
-size_t written;
-int status = gmd2_encode(pixels, pixel_len, &atlas, 0, encoded, capacity,
-                         &written, scratch, scratch_len);
+int32_t written = gmd2_encode(pixels, pixel_len, &atlas, 0, encoded, capacity,
+                              scratch, scratch_len);
 ```
 
-On success, `written` is the stream length. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
+On success, `written` is the positive stream length. The encoder requires its worst-case bound to fit in `INT32_MAX` bytes. In Wasm, the result is a JavaScript number. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
 
 Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`.
 
-Encode and decode return `GMD2_OK` (0) on success or one of these status codes.
+Decode returns `GMD2_OK` (0) on success. Both functions return a negative status on error.
 
 | Status | Meaning |
 |---|---|
