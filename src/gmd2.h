@@ -15,7 +15,7 @@ typedef struct {
 extern "C" {
 #endif
 
-/* Minimal MessagePack reader for FontLayoutMsgp: a.w, a.h, g[].i, g[].b. */
+/* Reads a.w, a.h, g[].i, and g[].b from FontLayoutMsgp. */
 int gmd2_layout_from_msgpack(const uint8_t *data, size_t size,
                             Gmd2Metadata *layout, char *error, size_t error_len);
 /* Read CLI JSON metadata into top-down coordinates. Release with gmd2_free_layout. */
@@ -23,15 +23,11 @@ int gmd2_layout_from_msdf_json(const char *data, size_t size, Gmd2Metadata *layo
                               char *error, size_t error_len);
 void gmd2_free_layout(Gmd2Metadata *layout);
 
-/* Caller owns *out and releases it with free(). 0 means success. */
+/* Archive functions return 0 on success. The caller frees *out. */
 int gmd2_archive_decode(const uint8_t *archive, size_t archive_len,
                 const Gmd2Metadata *layout, uint8_t **out, size_t *out_len,
                 char *error, size_t error_len);
 
-/* Readable, deterministic encoder. It produces valid GMD2 archives but does
- * not implement the offline global/glyph-local Zstd-guided mode optimizer used
- * to obtain the historic 101,626-byte Adelle reference archive.
- */
 int gmd2_archive_encode(const uint8_t *rgb, size_t rgb_len,
                 const Gmd2Metadata *layout, int zstd_level,
                 uint8_t **out, size_t *out_len,

@@ -46,9 +46,32 @@ static void test_json(void) {
     assert(top.glyphs == NULL && top.glyph_count == 0);
 }
 
+static void test_mode_validation(void) {
+    enum { W = 129 };
+    const Gmd2AtlasView atlas = {W, 1, NULL, 0, GMD2_ORIGIN_TOP};
+    uint8_t stream[GMD2_HEADER + 4*W] = {'G', 'M', 'D', '2', W, 0, 0, 0, 1, 0, 0, 0, 18, GMD2_RAW};
+    uint8_t decoded[3*W], scratch[(W+7)/8];
+    uint8_t *modes = stream + GMD2_HEADER;
+
+    memset(modes, GMD2_ESCAPE_SYMBOL, W);
+    memset(modes + W, 42, 3*W);
+    assert(gmd2_decode(stream, sizeof(stream), &atlas, 3,
+                       decoded, sizeof(decoded), scratch, sizeof(scratch)) == GMD2_OK);
+    assert(!memcmp(decoded, modes + W, sizeof(decoded)));
+
+    memset(modes, 0, W);
+    for (size_t i = 127; i < W; i++) {
+        modes[i] = GMD2_INVALID_MODE;
+        assert(gmd2_decode(stream, GMD2_HEADER + W, &atlas, 3,
+                           decoded, sizeof(decoded), scratch, sizeof(scratch)) == GMD2_ERR_INVALID_STREAM);
+        modes[i] = 0;
+    }
+}
+
 int main(void) {
     test_atlas_rectangles();
     test_json();
+    test_mode_validation();
     enum { W = 5, H = 4, N = W*H };
     const Gmd2Glyph glyphs[] = {
         {.index = 7, .atlas_bounds = {1, 3, 3, 1}},
@@ -152,6 +175,15 @@ int main(void) {
     Gmd2AtlasView bad_atlas = atlas;
     bad_atlas.y_origin = 2;
     assert(gmd2_encode(rgb, sizeof(rgb), &bad_atlas, 3, encoded, sizeof(encoded),
+                       scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
+    assert(gmd2_decode(encoded, rgb_len, &bad_atlas, 3, decoded, sizeof(rgb),
+                       scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
+
+    Gmd2Glyph overlapping[] = {glyphs[0], glyphs[1]};
+    overlapping[1].atlas_bounds.left = 2;
+    bad_atlas = atlas;
+    bad_atlas.glyphs = overlapping;
+    assert(gmd2_encode(rgb, sizeof(rgb), &bad_atlas, 3, other, sizeof(other),
                        scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
     assert(gmd2_decode(encoded, rgb_len, &bad_atlas, 3, decoded, sizeof(rgb),
                        scratch, scratch_len) == GMD2_ERR_INVALID_LAYOUT);
