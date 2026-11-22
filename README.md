@@ -21,15 +21,15 @@ Gmd2AtlasView atlas = {
     .glyph_count = glyph_count,
     .y_origin = GMD2_ORIGIN_TOP,
 };
-size_t capacity = gmd2_encode_bound(atlas.width, atlas.height, 0);
-size_t scratch_len = gmd2_encode_scratch_size(atlas.width, atlas.height, atlas.glyph_count);
+uint32_t capacity = gmd2_encode_bound(atlas.width, atlas.height, 0);
+uint32_t scratch_len = gmd2_encode_scratch_size(atlas.width, atlas.height, atlas.glyph_count);
 
 /* Supply encoded and scratch buffers with the capacities above. */
 int32_t written = gmd2_encode(pixels, pixel_len, &atlas, 0, encoded, capacity,
                               scratch, scratch_len);
 ```
 
-On success, `written` is the positive stream length. The encoder requires its worst-case bound to fit in `INT32_MAX` bytes. In Wasm, the result is a JavaScript number. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
+Lengths, capacities, glyph counts, and size queries use 32-bit unsigned integers. On success, `written` is the positive stream length. The encoder requires its worst-case bound to fit in `INT32_MAX` bytes. In Wasm, the result is a JavaScript number. For decoding, `gmd2_decode_size(stream, length, channels)` reads the header to give the output size. Use `gmd2_decode_scratch_size(width, height, glyph_count)` for scratch. Size queries return zero on error. The codec performs no heap allocations. The caller supplies disjoint buffers, and scratch can be reused between calls at any alignment.
 
 Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`.
 
@@ -63,14 +63,19 @@ atlas := gmd2.Atlas_View{
     Width = font.AtlasData.Width,
     Height = font.AtlasData.Height,
     Glyphs = cast([^]gmd2.Glyph)raw_data(font.Glyphs),
-    Glyph_Count = c.size_t(len(font.Glyphs)),
+    Glyph_Count = u32(len(font.Glyphs)),
     Y_Origin = .Bottom, // Match the metadata.
 }
 ```
 
 ## WebAssembly
 
-Build a decoder-only module with Zig.
+For Odin, run `make odin-wasm` to build the freestanding objects, or use
+`make odin-encoder-wasm` or `make odin-decoder-wasm` for one codec. The
+bindings link these objects on `wasm32` and `wasm64p32` and use Odin's
+runtime memory routines. Use `make odin` for native builds.
+
+Build a standalone decoder module with Zig.
 
 ```sh
 zig cc -target wasm32-wasi -Oz -c bindings/decoder.c -o gmd2_decoder.o

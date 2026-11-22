@@ -42,7 +42,7 @@ int gmd2_archive_decode(const uint8_t *archive, size_t length, const Gmd2Metadat
     if (ZSTD_isError(actual_frame) || actual_frame != frame_len)
         return archive_fail(error, error_len, "expected exactly one Zstd frame");
 
-    size_t scratch_len = gmd2_decode_scratch_size(layout->width, layout->height, layout->glyph_count);
+    size_t scratch_len = gmd2_scratch_size(layout->width, layout->height, layout->glyph_count);
     if (!scratch_len)
         return archive_fail(error, error_len, "invalid scratch size");
     uint8_t *raw = (uint8_t*)malloc(bound);
@@ -89,7 +89,7 @@ int gmd2_archive_encode(const uint8_t *rgb, size_t rgb_len, const Gmd2Metadata *
         rgb_len != gmd2_pixel_count(layout->width, layout->height) * 3)
         return archive_fail(error, error_len, "invalid input or pixel byte count");
 
-    size_t scratch_len = gmd2_encode_scratch_size(layout->width, layout->height, layout->glyph_count);
+    size_t scratch_len = gmd2_scratch_size(layout->width, layout->height, layout->glyph_count);
     if (!scratch_len)
         return archive_fail(error, error_len, "invalid scratch size");
     uint8_t *raw = (uint8_t*)malloc(capacity);

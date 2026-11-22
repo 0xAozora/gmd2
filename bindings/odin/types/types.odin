@@ -43,13 +43,13 @@ Y_Origin :: enum u32 {
 Atlas_View :: struct {
 	Width, Height: u32,
 	Glyphs: [^]Glyph,
-	Glyph_Count: c.size_t,
+	Glyph_Count: u32,
 	Y_Origin: Y_Origin,
 }
 
 Artery_Atlas_View :: struct {
 	Width, Height: u32,
 	Glyphs: [^]Artery_Glyph,
-	Glyph_Count: c.size_t,
+	Glyph_Count: u32,
 	Image_Index: u32,
 }

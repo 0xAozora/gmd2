@@ -58,7 +58,7 @@ pub struct AtlasView {
     pub width: u32,
     pub height: u32,
     pub glyphs: *const Glyph,
-    pub glyph_count: usize,
+    pub glyph_count: u32,
     pub y_origin: u32,
 }
 
@@ -68,7 +68,7 @@ pub struct ArteryAtlasView {
     pub width: u32,
     pub height: u32,
     pub glyphs: *const ArteryGlyph,
-    pub glyph_count: usize,
+    pub glyph_count: u32,
     pub image_index: u32,
 }
 
@@ -130,23 +130,23 @@ mod tests {
             width: 2,
             height: 2,
             glyphs: artery.as_ptr(),
-            glyph_count: artery.len(),
+            glyph_count: artery.len() as u32,
             image_index: 0,
         };
         for (channels, expected) in FIXTURES {
             let pixels: Vec<u8> = (0..4 * channels).map(|i| (i * 13) as u8).collect();
-            let mut encoded = vec![0; unsafe { encode_bound(2, 2, 0) }];
-            let mut scratch = vec![0_u8; unsafe { encode_scratch_size(2, 2, 2) }];
+            let mut encoded = vec![0; unsafe { encode_bound(2, 2, 0) } as usize];
+            let mut scratch = vec![0_u8; unsafe { encode_scratch_size(2, 2, 2) } as usize];
             let written = unsafe {
                 encode(
                     pixels.as_ptr(),
-                    pixels.len(),
+                    pixels.len() as u32,
                     &atlas,
                     0,
                     encoded.as_mut_ptr(),
-                    encoded.len(),
+                    encoded.len() as u32,
                     scratch.as_mut_ptr().cast(),
-                    scratch.len(),
+                    scratch.len() as u32,
                 )
             };
             assert_eq!(written, expected.len() as i32);
@@ -154,13 +154,13 @@ mod tests {
             let written = unsafe {
                 encode_artery(
                     pixels.as_ptr(),
-                    pixels.len(),
+                    pixels.len() as u32,
                     &artery_atlas,
                     channels,
                     encoded.as_mut_ptr(),
-                    encoded.len(),
+                    encoded.len() as u32,
                     scratch.as_mut_ptr().cast(),
-                    scratch.len(),
+                    scratch.len() as u32,
                 )
             };
             assert_eq!(written, expected.len() as i32);
@@ -192,23 +192,24 @@ mod tests {
             width: 2,
             height: 2,
             glyphs: artery.as_ptr(),
-            glyph_count: artery.len(),
+            glyph_count: artery.len() as u32,
             image_index: 0,
         };
         for (channels, encoded) in FIXTURES {
             let expected: Vec<u8> = (0..4 * channels).map(|i| (i * 13) as u8).collect();
-            let mut decoded = vec![0; unsafe { decode_size(encoded.as_ptr(), encoded.len(), 0) }];
-            let mut scratch = vec![0_u8; unsafe { decode_scratch_size(2, 2, 2) }];
+            let mut decoded =
+                vec![0; unsafe { decode_size(encoded.as_ptr(), encoded.len() as u32, 0) } as usize];
+            let mut scratch = vec![0_u8; unsafe { decode_scratch_size(2, 2, 2) } as usize];
             let status = unsafe {
                 decode(
                     encoded.as_ptr(),
-                    encoded.len(),
+                    encoded.len() as u32,
                     &atlas,
                     0,
                     decoded.as_mut_ptr(),
-                    decoded.len(),
+                    decoded.len() as u32,
                     scratch.as_mut_ptr().cast(),
-                    scratch.len(),
+                    scratch.len() as u32,
                 )
             };
             assert_eq!(status, OK);
@@ -217,13 +218,13 @@ mod tests {
             let status = unsafe {
                 decode_artery(
                     encoded.as_ptr(),
-                    encoded.len(),
+                    encoded.len() as u32,
                     &artery_atlas,
                     channels,
                     decoded.as_mut_ptr(),
-                    decoded.len(),
+                    decoded.len() as u32,
                     scratch.as_mut_ptr().cast(),
-                    scratch.len(),
+                    scratch.len() as u32,
                 )
             };
             assert_eq!(status, OK);

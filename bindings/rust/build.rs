@@ -21,6 +21,9 @@ fn main() {
         }
     }
     if enabled {
+        if std::env::var("TARGET").as_deref() == Ok("wasm32-unknown-unknown") {
+            build.flag("-ffreestanding");
+        }
         build.std("c11").compile("gmd2");
     }
 }

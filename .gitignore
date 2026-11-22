@@ -13,5 +13,6 @@ __pycache__/
 /tests/roundtrip_reencoded.rgb
 
 /bindings/odin/*/gmd2.o
+/bindings/odin/*/gmd2_wasm.o
 /bindings/odin/*/libgmd2.a
 /bindings/rust/target/

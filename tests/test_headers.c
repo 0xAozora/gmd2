@@ -96,7 +96,7 @@ int main(void) {
         {.index = 7, .atlas_bounds = {1, 3, 3, 1}},
         {.index = 9, .atlas_bounds = {3, 3, 5, 1}},
     };
-    const size_t glyph_count = sizeof(glyphs) / sizeof(glyphs[0]);
+    const uint32_t glyph_count = sizeof(glyphs) / sizeof(glyphs[0]);
     const Gmd2AtlasView atlas = {W, H, glyphs, glyph_count, GMD2_ORIGIN_TOP};
     const Gmd2AtlasView empty_atlas = {W, H, NULL, 0, GMD2_ORIGIN_TOP};
     uint8_t rgb[3*N], rgba[4*N], decoded[4*N];
@@ -116,11 +116,11 @@ int main(void) {
 
     _Alignas(uint32_t) uint8_t storage[1 + sizeof(Gmd2GlyphRect) * (sizeof(glyphs) / sizeof(glyphs[0])) + (N + 7) / 8];
     uint8_t *scratch = storage + 1;
-    size_t scratch_len = gmd2_decode_scratch_size(W, H, glyph_count);
+    uint32_t scratch_len = gmd2_decode_scratch_size(W, H, glyph_count);
     assert(scratch_len == sizeof(storage) - 1);
     assert(scratch_len == gmd2_encode_scratch_size(W, H, glyph_count));
     assert(!gmd2_decode_scratch_size(0, H, glyph_count));
-    assert(!gmd2_encode_scratch_size(W, H, SIZE_MAX));
+    assert(!gmd2_encode_scratch_size(W, H, UINT32_MAX));
     memset(storage, 0xff, sizeof(storage));
 
     rgb_len = gmd2_encode(rgb, sizeof(rgb), &atlas, 0,
@@ -134,6 +134,9 @@ int main(void) {
     assert(gmd2_decode_size(encoded, rgb_len, 4) == sizeof(rgba));
     assert(!gmd2_decode_size(encoded, 17, 0));
     assert(!gmd2_decode_size(encoded, rgb_len, 1));
+
+    uint8_t large_header[GMD2_HEADER] = {'G', 'M', 'D', '2', 1, 0, 0, 64, 1, 0, 0, 0, 18, GMD2_RAW};
+    assert(!gmd2_decode_size(large_header, sizeof(large_header), 4));
 
     memset(decoded, 0, sizeof(decoded));
     assert(!gmd2_decode(encoded, rgb_len, &atlas, 0,

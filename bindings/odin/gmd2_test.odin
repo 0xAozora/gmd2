@@ -1,3 +1,6 @@
+#+build !wasm32
+#+build !wasm64p32
+
 package gmd2
 
 import "core:bytes"
@@ -36,14 +39,14 @@ fixtures :: proc(t: ^testing.T) {
 		for &pixel, j in pixels { pixel = u8(j * 13) }
 		encoded := make([]u8, encode_bound(2, 2, 0))
 		defer delete(encoded)
-		decoded := make([]u8, decode_size(raw_data(expected), c.size_t(len(expected)), 0))
+		decoded := make([]u8, decode_size(raw_data(expected), u32(len(expected)), 0))
 		defer delete(decoded)
 		scratch_size := encode_scratch_size(2, 2, 2)
 		testing.expect(t, scratch_size == decode_scratch_size(2, 2, 2))
 		scratch := make([]u8, scratch_size)
 		defer delete(scratch)
-		pixel_count, stream_count := c.size_t(len(pixels)), c.size_t(len(expected))
-		capacity := c.size_t(len(encoded))
+		pixel_count, stream_count := u32(len(pixels)), u32(len(expected))
+		capacity := u32(len(encoded))
 
 		written := encode(raw_data(pixels), pixel_count, &bottom_atlas, 0,
 			raw_data(encoded), capacity, raw_data(scratch), scratch_size)

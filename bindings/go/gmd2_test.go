@@ -33,31 +33,31 @@ func TestFixtures(t *testing.T) {
 				pixels[i] = byte(i * 13)
 			}
 			encoded := make([]byte, encoder.EncodeBound(2, 2, 0))
-			decoded := make([]byte, decoder.DecodeSize(unsafe.SliceData(expected), uint(len(expected)), 0))
+			decoded := make([]byte, decoder.DecodeSize(unsafe.SliceData(expected), uint32(len(expected)), 0))
 			scratch := make([]byte, encoder.EncodeScratchSize(2, 2, 2))
-			if uint(len(scratch)) != decoder.DecodeScratchSize(2, 2, 2) {
+			if uint32(len(scratch)) != decoder.DecodeScratchSize(2, 2, 2) {
 				t.Fatal("scratch size differs between encoder and decoder")
 			}
 			scratchPtr := unsafe.SliceData(scratch)
 			input, out := unsafe.SliceData(pixels), unsafe.SliceData(encoded)
 			src, dst := unsafe.SliceData(expected), unsafe.SliceData(decoded)
-			if written := encoder.Encode(input, uint(len(pixels)), bottomAtlas, 0,
-				out, uint(len(encoded)), scratchPtr, uint(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
+			if written := encoder.Encode(input, uint32(len(pixels)), bottomAtlas, 0,
+				out, uint32(len(encoded)), scratchPtr, uint32(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("JSON glyph encoder differs from fixture")
 			}
-			if written := encoder.EncodeArtery(input, uint(len(pixels)), arteryAtlas, channels,
-				out, uint(len(encoded)), scratchPtr, uint(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
+			if written := encoder.EncodeArtery(input, uint32(len(pixels)), arteryAtlas, channels,
+				out, uint32(len(encoded)), scratchPtr, uint32(len(scratch))); written != int32(len(expected)) || !bytes.Equal(encoded[:written], expected) {
 				t.Fatal("Artery glyph encoder differs from fixture")
 			}
-			if decoder.Decode(src, uint(len(expected)), topAtlas, 0,
-				dst, uint(len(decoded)), scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
+			if decoder.Decode(src, uint32(len(expected)), topAtlas, 0,
+				dst, uint32(len(decoded)), scratchPtr, uint32(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
 				t.Fatal("JSON glyph decoder differs from RGB fixture")
 			}
 			for i := range decoded {
 				decoded[i] = 0
 			}
-			if decoder.DecodeArtery(src, uint(len(expected)), arteryAtlas, channels,
-				dst, uint(len(decoded)), scratchPtr, uint(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
+			if decoder.DecodeArtery(src, uint32(len(expected)), arteryAtlas, channels,
+				dst, uint32(len(decoded)), scratchPtr, uint32(len(scratch))) != OK || !bytes.Equal(decoded, pixels) {
 				t.Fatal("Artery glyph decoder differs from RGB fixture")
 			}
 		})

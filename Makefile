@@ -1,4 +1,6 @@
 CC ?= cc
+ZIG ?= zig
+WASM_CFLAGS ?= -Oz -std=c11
 CFLAGS ?= -O2 -std=c11 -Wall -Wextra -Wpedantic
 CPPFLAGS ?=
 ZSTD_CFLAGS ?= $(shell pkg-config --cflags libzstd 2>/dev/null)
@@ -9,18 +11,24 @@ all: gmd2tool
 HEADERS = include/gmd2_encoder.h include/gmd2_decoder.h
 ATLAS_FIXTURE = tests/fixtures/jetbrains-mono
 
-.PHONY: all headers odin odin-encoder odin-decoder check clean
+.PHONY: all headers odin odin-encoder odin-decoder odin-wasm odin-encoder-wasm odin-decoder-wasm check clean
 headers: $(HEADERS)
 
 odin: odin-encoder odin-decoder
 odin-encoder: bindings/odin/encoder/libgmd2.a
 odin-decoder: bindings/odin/decoder/libgmd2.a
+odin-wasm: odin-encoder-wasm odin-decoder-wasm
+odin-encoder-wasm: bindings/odin/encoder/gmd2_wasm.o
+odin-decoder-wasm: bindings/odin/decoder/gmd2_wasm.o
 
 bindings/odin/%/libgmd2.a: bindings/odin/%/gmd2.o
 	$(AR) rcs $@ $<
 
 bindings/odin/%/gmd2.o: bindings/%.c include/gmd2_%.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+bindings/odin/%/gmd2_wasm.o: bindings/%.c include/gmd2_%.h
+	$(ZIG) cc -target wasm32-freestanding $(CPPFLAGS) $(WASM_CFLAGS) -c $< -o $@
 
 include/gmd2_%.h: src/gmd2_codec.in Makefile
 	mkdir -p include
@@ -46,3 +54,4 @@ clean:
 	rm -f gmd2tool tests/test_headers tests/roundtrip_reference.rgb tests/roundtrip_reencoded.rgb tests/reencoded.gmd2
 	rm -f bindings/odin/encoder/gmd2.o bindings/odin/encoder/libgmd2.a
 	rm -f bindings/odin/decoder/gmd2.o bindings/odin/decoder/libgmd2.a
+	rm -f bindings/odin/encoder/gmd2_wasm.o bindings/odin/decoder/gmd2_wasm.o

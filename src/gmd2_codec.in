@@ -39,14 +39,14 @@ enum {
 typedef struct {
     uint32_t width, height;
     const Gmd2Glyph *glyphs;
-    size_t glyph_count;
+    uint32_t glyph_count;
     uint32_t y_origin;
 } Gmd2AtlasView;
 
 typedef struct {
     uint32_t width, height;
     const Gmd2ArteryGlyph *glyphs;
-    size_t glyph_count;
+    uint32_t glyph_count;
     uint32_t image_index;
 } Gmd2ArteryAtlasView;
 
@@ -74,15 +74,15 @@ extern "C" {
  * Pass channels 0 to infer the format from pixels_len.
  * Encoding returns bytes written or a negative GMD2_ERR_* code. */
 /* Worst-case bytes (RGBA8 for channels 0), or 0 if invalid or above INT32_MAX. */
-size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels);
+uint32_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels);
 /* Required scratch bytes, or 0 on error. Scratch can have any alignment. */
-size_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count);
-int32_t gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
-                    unsigned channels, uint8_t *out, size_t capacity,
-                    void *scratch, size_t scratch_len);
-int32_t gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
-                           unsigned channels, uint8_t *out, size_t capacity,
-                           void *scratch, size_t scratch_len);
+uint32_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, uint32_t glyph_count);
+int32_t gmd2_encode(const uint8_t *pixels, uint32_t pixels_len, const Gmd2AtlasView *atlas,
+                    unsigned channels, uint8_t *out, uint32_t capacity,
+                    void *scratch, uint32_t scratch_len);
+int32_t gmd2_encode_artery(const uint8_t *pixels, uint32_t pixels_len, const Gmd2ArteryAtlasView *atlas,
+                           unsigned channels, uint8_t *out, uint32_t capacity,
+                           void *scratch, uint32_t scratch_len);
 
 /* DECODER */
 /* Define GMD2_DECODER_IMPLEMENTATION before including this header in one translation unit.
@@ -90,15 +90,15 @@ int32_t gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2A
  * Pass channels 0 to infer RGB8 or RGBA8. With channels 4, missing alpha is 255.
  * Decoding returns GMD2_OK or a negative GMD2_ERR_* code. */
 /* Output bytes from the stream header, or 0 on error. */
-size_t gmd2_decode_size(const uint8_t *data, size_t length, unsigned channels);
+uint32_t gmd2_decode_size(const uint8_t *data, uint32_t length, unsigned channels);
 /* Required scratch bytes, or 0 on error. Scratch can have any alignment. */
-size_t gmd2_decode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count);
-int gmd2_decode(const uint8_t *data, size_t length, const Gmd2AtlasView *atlas,
-                unsigned channels, uint8_t *out, size_t capacity,
-                void *scratch, size_t scratch_len);
-int gmd2_decode_artery(const uint8_t *data, size_t length, const Gmd2ArteryAtlasView *atlas,
-                       unsigned channels, uint8_t *out, size_t capacity,
-                       void *scratch, size_t scratch_len);
+uint32_t gmd2_decode_scratch_size(uint32_t width, uint32_t height, uint32_t glyph_count);
+int gmd2_decode(const uint8_t *data, uint32_t length, const Gmd2AtlasView *atlas,
+                unsigned channels, uint8_t *out, uint32_t capacity,
+                void *scratch, uint32_t scratch_len);
+int gmd2_decode_artery(const uint8_t *data, uint32_t length, const Gmd2ArteryAtlasView *atlas,
+                       unsigned channels, uint8_t *out, uint32_t capacity,
+                       void *scratch, uint32_t scratch_len);
 
 /* COMMON */
 #ifdef __cplusplus
@@ -114,7 +114,18 @@ int gmd2_decode_artery(const uint8_t *data, size_t length, const Gmd2ArteryAtlas
 #define GMD2_COMMON_IMPLEMENTED
 
 #include <limits.h>
+#if defined(__wasm__) && !__STDC_HOSTED__
+#ifdef __cplusplus
+extern "C" {
+#endif
+void *memcpy(void *dst, const void *src, size_t n);
+void *memset(void *dst, int value, size_t n);
+#ifdef __cplusplus
+}
+#endif
+#else
 #include <string.h>
+#endif
 
 enum {
     GMD2_HEADER = 18,
@@ -137,13 +148,13 @@ typedef struct {
     uint8_t *covered;
 } Gmd2Traversal;
 
-static size_t gmd2_scratch_size(uint32_t width, uint32_t height, size_t glyph_count) {
+static uint32_t gmd2_scratch_size(uint32_t width, uint32_t height, size_t glyph_count) {
     size_t count = gmd2_pixel_count(width, height);
     size_t covered_bytes = (count + 7) / 8;
-    if (!count || glyph_count >= UINT32_MAX ||
-        glyph_count > (SIZE_MAX - covered_bytes) / sizeof(Gmd2GlyphRect))
+    const size_t max_bytes = SIZE_MAX < UINT32_MAX ? SIZE_MAX : UINT32_MAX;
+    if (!count || glyph_count > (max_bytes - covered_bytes) / sizeof(Gmd2GlyphRect))
         return 0;
-    return glyph_count * sizeof(Gmd2GlyphRect) + covered_bytes;
+    return (uint32_t)(glyph_count * sizeof(Gmd2GlyphRect) + covered_bytes);
 }
 
 typedef struct {
@@ -460,12 +471,12 @@ static size_t gmd2_raw_bound(uint32_t width, uint32_t height, unsigned channels)
     return GMD2_HEADER + (channels + 1) * n;
 }
 
-size_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels) {
+uint32_t gmd2_encode_bound(uint32_t width, uint32_t height, unsigned channels) {
     size_t bound = gmd2_raw_bound(width, height, channels);
-    return bound <= INT32_MAX ? bound : 0;
+    return bound <= INT32_MAX ? (uint32_t)bound : 0;
 }
 
-size_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count) {
+uint32_t gmd2_encode_scratch_size(uint32_t width, uint32_t height, uint32_t glyph_count) {
     return gmd2_scratch_size(width, height, glyph_count);
 }
 
@@ -649,18 +660,18 @@ static int32_t gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
     return (int32_t)total;
 }
 
-int32_t gmd2_encode(const uint8_t *pixels, size_t pixels_len, const Gmd2AtlasView *atlas,
-                    unsigned channels, uint8_t *out, size_t capacity,
-                    void *scratch, size_t scratch_len) {
+int32_t gmd2_encode(const uint8_t *pixels, uint32_t pixels_len, const Gmd2AtlasView *atlas,
+                    unsigned channels, uint8_t *out, uint32_t capacity,
+                    void *scratch, uint32_t scratch_len) {
     if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_JSON_GLYPHS, atlas->y_origin, 0};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
                               scratch, scratch_len, out, capacity);
 }
 
-int32_t gmd2_encode_artery(const uint8_t *pixels, size_t pixels_len, const Gmd2ArteryAtlasView *atlas,
-                           unsigned channels, uint8_t *out, size_t capacity,
-                           void *scratch, size_t scratch_len) {
+int32_t gmd2_encode_artery(const uint8_t *pixels, uint32_t pixels_len, const Gmd2ArteryAtlasView *atlas,
+                           unsigned channels, uint8_t *out, uint32_t capacity,
+                           void *scratch, uint32_t scratch_len) {
     if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_ARTERY_GLYPHS, GMD2_ORIGIN_BOTTOM, atlas->image_index};
     return gmd2_encode_pixels(pixels, pixels_len, atlas->width, atlas->height, input, channels,
@@ -691,7 +702,9 @@ static uint32_t gmd2_load32le(const uint8_t *p) {
 
 static unsigned gmd2_raw_flags(const uint8_t *data) {
     unsigned flags = data[13];
-    if (memcmp(data, "GMD2", 4) || data[12] >= 24 ||
+    const uint32_t magic = (uint32_t)'G' | (uint32_t)'M' << 8 |
+                           (uint32_t)'D' << 16 | (uint32_t)'2' << 24;
+    if (gmd2_load32le(data) != magic || data[12] >= 24 ||
         (flags != GMD2_RAW && flags != (GMD2_RAW | GMD2_ALPHA) &&
          flags != (GMD2_RAW | GMD2_ALPHA | GMD2_ALPHA_MEDIAN)))
         return 0;
@@ -704,15 +717,16 @@ static unsigned gmd2_output_channels(unsigned flags, unsigned channels) {
     return 0;
 }
 
-size_t gmd2_decode_size(const uint8_t *data, size_t length, unsigned channels) {
+uint32_t gmd2_decode_size(const uint8_t *data, uint32_t length, unsigned channels) {
     if (!data || length < GMD2_HEADER) return 0;
     unsigned flags = gmd2_raw_flags(data);
     if (!flags) return 0;
     size_t count = gmd2_pixel_count(gmd2_load32le(data + 4), gmd2_load32le(data + 8));
-    return count * gmd2_output_channels(flags, channels);
+    size_t bytes = count * gmd2_output_channels(flags, channels);
+    return bytes <= UINT32_MAX ? (uint32_t)bytes : 0;
 }
 
-size_t gmd2_decode_scratch_size(uint32_t width, uint32_t height, size_t glyph_count) {
+uint32_t gmd2_decode_scratch_size(uint32_t width, uint32_t height, uint32_t glyph_count) {
     return gmd2_scratch_size(width, height, glyph_count);
 }
 
@@ -781,7 +795,15 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
         if (alpha_len) {
             for (size_t i = 0; i < n; i++) out[4*i+3] = alpha[i];
         } else {
-            memset(out, 255, 4 * n);
+            size_t bytes = 4 * n;
+#if defined(__wasm__) && !__STDC_HOSTED__
+            /* Odin's memory routines use a signed length. */
+            if (bytes > INT32_MAX) {
+                memset(out, 255, 2 * n);
+                memset(out + 2 * n, 255, 2 * n);
+            } else
+#endif
+                memset(out, 255, bytes);
         }
     }
     uint8_t shared_channels[4];
@@ -870,18 +892,18 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
     return GMD2_OK;
 }
 
-int gmd2_decode(const uint8_t *data, size_t length, const Gmd2AtlasView *atlas,
-                unsigned channels, uint8_t *out, size_t capacity,
-                void *scratch, size_t scratch_len) {
+int gmd2_decode(const uint8_t *data, uint32_t length, const Gmd2AtlasView *atlas,
+                unsigned channels, uint8_t *out, uint32_t capacity,
+                void *scratch, uint32_t scratch_len) {
     if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_JSON_GLYPHS, atlas->y_origin, 0};
     return gmd2_decode_pixels(data, length, atlas->width, atlas->height, input, channels,
                               scratch, scratch_len, out, capacity);
 }
 
-int gmd2_decode_artery(const uint8_t *data, size_t length, const Gmd2ArteryAtlasView *atlas,
-                       unsigned channels, uint8_t *out, size_t capacity,
-                       void *scratch, size_t scratch_len) {
+int gmd2_decode_artery(const uint8_t *data, uint32_t length, const Gmd2ArteryAtlasView *atlas,
+                       unsigned channels, uint8_t *out, uint32_t capacity,
+                       void *scratch, uint32_t scratch_len) {
     if (!atlas) return GMD2_ERR_INVALID_ARGUMENT;
     Gmd2GlyphInput input = {atlas->glyphs, atlas->glyph_count, GMD2_ARTERY_GLYPHS, GMD2_ORIGIN_BOTTOM, atlas->image_index};
     return gmd2_decode_pixels(data, length, atlas->width, atlas->height, input, channels,

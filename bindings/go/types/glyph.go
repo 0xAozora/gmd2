@@ -34,7 +34,7 @@ type ArteryAdvance struct {
 type AtlasView struct {
 	Width, Height uint32
 	Glyphs        *Glyph
-	GlyphCount    uint
+	GlyphCount    uint32
 	YOrigin       YOrigin
 }
 
@@ -42,6 +42,6 @@ type AtlasView struct {
 type ArteryAtlasView struct {
 	Width, Height uint32
 	Glyphs        *ArteryGlyph
-	GlyphCount    uint
+	GlyphCount    uint32
 	ImageIndex    uint32
 }
