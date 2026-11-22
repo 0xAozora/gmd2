@@ -100,6 +100,7 @@ enum {
     GMD2_HEADER = 18,
     GMD2_RAW = 1,
     GMD2_ALPHA = 2,
+    GMD2_ALPHA_MEDIAN = 4,
     GMD2_ESCAPE_SYMBOL = 4
 };
 
@@ -351,6 +352,14 @@ static inline uint8_t gmd2_paeth(int a, int b, int c) {
     /* At equality Paeth prefers an endpoint over the diagonal. */
     return (uint8_t)(threshold <= low ? high : threshold >= high ? low : c);
 }
+
+static inline uint8_t gmd2_rgb_median(const uint8_t *px) {
+    uint8_t r = px[0], g = px[1], b = px[2];
+    uint8_t low = r < g ? r : g;
+    uint8_t high = r < g ? g : r;
+    return b < low ? low : b > high ? high : b;
+}
+
 static inline int gmd2_shared_channel(int mapid,int mk) {
     switch(mk) {
         case 0:return mapid/8;
@@ -386,7 +395,8 @@ static uint32_t gmd2_load32le(const uint8_t *p) {
 static unsigned gmd2_raw_flags(const uint8_t *data) {
     unsigned flags = data[13];
     if (memcmp(data, "GMD2", 4) || data[12] >= 24 ||
-        (flags != GMD2_RAW && flags != (GMD2_RAW | GMD2_ALPHA)))
+        (flags != GMD2_RAW && flags != (GMD2_RAW | GMD2_ALPHA) &&
+         flags != (GMD2_RAW | GMD2_ALPHA | GMD2_ALPHA_MEDIAN)))
         return 0;
     return flags;
 }
@@ -468,6 +478,7 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
     if (status != GMD2_OK) return status;
     const uint8_t *er=body+n, *sr=er+nexception, *esc=sr+nshared;
     const uint8_t *alpha=body+rgb_len;
+    if (channels == 4 && !alpha_len) memset(out, 255, 4 * n);
     uint8_t shared_channels[4];
     for (int mk=0; mk<4; mk++)
         shared_channels[mk]=(uint8_t)gmd2_shared_channel(data[12],mk);
@@ -502,10 +513,11 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
         unsigned above2_step = prev2 ? channels : 0;
         for (uint32_t x = 0; x < span; x++, px += channels) {
             unsigned mode = modes[body[i++]];
-            if (channels == 4) px[3] = alpha_len ? alpha[pos+x] : 255;
+            uint8_t median;
             if(mode==GMD2_ESCAPE_MODE) {
                 memcpy(px,esc,3);
                 esc+=3;
+                median = flags & GMD2_ALPHA_MEDIAN ? gmd2_rgb_median(px) : 0;
             } else {
                 int mk=mode&3,sm=(mode>>2)&7,em=mode>>5;
                 int c=shared_channels[mk];
@@ -521,6 +533,8 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
                     if(sm==5)v=(uint8_t)(v+*sr++);
                 }
                 px[0]=px[1]=px[2]=v;
+                /* The shared value occurs at least twice in RGB. */
+                median = v;
                 if(mk>0) {
                     c=mk-1;
                     if(em<2)v=data[16+em];
@@ -538,6 +552,12 @@ static int gmd2_decode_pixels(const uint8_t *data, size_t length,
                     }
                     px[c]=v;
                 }
+            }
+            if (alpha_len) {
+                if (flags & GMD2_ALPHA_MEDIAN)
+                    px[3] = (uint8_t)(median + *alpha++);
+                else
+                    px[3] = alpha[pos+x];
             }
             left = px;
             upper_left = above;

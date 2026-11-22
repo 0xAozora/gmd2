@@ -86,6 +86,7 @@ int main(void) {
 
     for (size_t i = 0; i < N; i++) {
         for (size_t c = 0; c < 3; c++) rgb[3*i+c] = (uint8_t)(7*i+31*c);
+        if (i % 2 == 0) rgb[3*i+2] = rgb[3*i+1];
         memcpy(rgba+4*i, rgb+3*i, 3);
         rgba[4*i+3] = 255;
     }
@@ -128,11 +129,25 @@ int main(void) {
                         encoded, sizeof(encoded), scratch, scratch_len);
     assert(rgba_len > 0);
     assert(rgba_len == rgb_len + N);
+    assert(encoded[13] == (GMD2_RAW | GMD2_ALPHA | GMD2_ALPHA_MEDIAN));
+    const uint8_t alpha_order[N] = {11, 12, 6, 7, 13, 14, 8, 9, 0, 1, 2, 3, 4, 5, 10, 15, 16, 17, 18, 19};
+    for (size_t i = 0; i < N; i++)
+        assert(encoded[rgb_len+i] == (uint8_t)(6*alpha_order[i]-31));
     assert(gmd2_decode_size(encoded, 18, 0) == sizeof(rgba));
     assert(!gmd2_decode_size(encoded, rgba_len, 3));
     assert(!gmd2_decode(encoded, rgba_len, &atlas, 0,
                         decoded, sizeof(decoded), scratch, scratch_len));
     assert(!memcmp(rgba, decoded, sizeof(rgba)) && storage[0] == 0xff);
+
+    memcpy(other, encoded, rgba_len);
+    other[13] = GMD2_RAW | GMD2_ALPHA;
+    for (size_t i = 0; i < N; i++) other[rgb_len+i] = rgba[4*i+3];
+    assert(!gmd2_decode(other, rgba_len, &atlas, 0,
+                        decoded, sizeof(decoded), scratch, scratch_len));
+    assert(!memcmp(rgba, decoded, sizeof(rgba)));
+    other[13] = GMD2_RAW | GMD2_ALPHA_MEDIAN;
+    assert(gmd2_decode(other, rgba_len, &atlas, 0,
+                       decoded, sizeof(decoded), scratch, scratch_len) == GMD2_ERR_INVALID_STREAM);
 
     assert(gmd2_encode(rgba, sizeof(rgba), &atlas, 4,
                         other, sizeof(other), scratch, scratch_len - 1) == GMD2_ERR_SCRATCH_TOO_SMALL);

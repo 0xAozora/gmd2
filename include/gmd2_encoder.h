@@ -100,6 +100,7 @@ enum {
     GMD2_HEADER = 18,
     GMD2_RAW = 1,
     GMD2_ALPHA = 2,
+    GMD2_ALPHA_MEDIAN = 4,
     GMD2_ESCAPE_SYMBOL = 4
 };
 
@@ -351,6 +352,14 @@ static inline uint8_t gmd2_paeth(int a, int b, int c) {
     /* At equality Paeth prefers an endpoint over the diagonal. */
     return (uint8_t)(threshold <= low ? high : threshold >= high ? low : c);
 }
+
+static inline uint8_t gmd2_rgb_median(const uint8_t *px) {
+    uint8_t r = px[0], g = px[1], b = px[2];
+    uint8_t low = r < g ? r : g;
+    uint8_t high = r < g ? g : r;
+    return b < low ? low : b > high ? high : b;
+}
+
 static inline int gmd2_shared_channel(int mapid,int mk) {
     switch(mk) {
         case 0:return mapid/8;
@@ -509,6 +518,23 @@ static void gmd2_replay_symbols(const Gmd2Traversal *t, const uint8_t *pixels, u
     }
 }
 
+static void gmd2_write_alpha(const Gmd2Traversal *t, const uint8_t *pixels,
+                             size_t n, uint8_t *alpha) {
+    Gmd2Cursor cursor = gmd2_start_cursor(t);
+    size_t i = 0;
+    while (cursor.glyph_width) {
+        const uint8_t *px = pixels + 4 * (size_t)cursor.pos;
+        for (uint32_t x = 0; x < cursor.glyph_width; x++, px += 4)
+            alpha[i++] = (uint8_t)(px[3] - gmd2_rgb_median(px));
+        gmd2_next_glyph_row(t, &cursor);
+    }
+    for (; i < n; i++) {
+        Gmd2Pixel pixel = gmd2_next_outside_pixel(t, &cursor);
+        const uint8_t *px = pixels + 4 * (size_t)pixel.pos;
+        alpha[i] = (uint8_t)(px[3] - gmd2_rgb_median(px));
+    }
+}
+
 static int32_t gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
                              uint32_t width, uint32_t height,
                              Gmd2GlyphInput glyphs, unsigned channels,
@@ -590,16 +616,14 @@ static int32_t gmd2_encode_pixels(const uint8_t *pixels, size_t pixels_len,
     gmd2_store32le(out + 4, width);
     gmd2_store32le(out + 8, height);
     out[12] = GMD2_ENCODE_MAP;
-    out[13] = GMD2_RAW | (has_alpha ? GMD2_ALPHA : 0);
+    out[13] = GMD2_RAW | (has_alpha ? GMD2_ALPHA | GMD2_ALPHA_MEDIAN : 0);
     memcpy(out + 14, bp, sizeof(bp));
     memcpy(out + 16, ep, sizeof(ep));
     if (ne || ns || nx) {
         Gmd2Tail tail = {body + n, body + n + ne, body + n + ne + ns};
         gmd2_replay_symbols(&t, pixels, channels, body, n, tail);
     }
-    if (has_alpha) {
-        for (size_t i = 0; i < n; i++) body[rgb_len+i] = pixels[4*i+3];
-    }
+    if (has_alpha) gmd2_write_alpha(&t, pixels, n, body + rgb_len);
     return (int32_t)total;
 }
 

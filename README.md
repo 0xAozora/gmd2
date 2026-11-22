@@ -33,6 +33,8 @@ On success, `written` is the positive stream length. The encoder requires its wo
 
 Use `3` for RGB8, `4` for RGBA8, or `0` for automatic selection. With `0`, the encoder infers channels from the exact input byte count and `gmd2_encode_bound` reserves space for either format. The decoder selects RGBA8 when the stream stores alpha, and RGB8 otherwise. Set `4` explicitly to fill omitted alpha with `255`.
 
+For stored alpha, the encoder writes `alpha - median(R, G, B)` modulo 256 in the same pixel order as the mode bytes. This sets the median-alpha flag (`0x04`) and requires an updated decoder. The updated decoder also reads existing streams with raw alpha.
+
 Decode returns `GMD2_OK` (0) on success. Both functions return a negative status on error.
 
 | Status | Meaning |
