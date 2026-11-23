@@ -126,6 +126,8 @@ The MessagePack benchmark uses the compact `FontLayoutMsgp` keys and 32-bit floa
 
 The JetBrains Mono fixture includes the SIL Open Font License 1.1 and its generation command. [Fixture provenance and license](tests/fixtures/jetbrains-mono/)
 
+The full JetBrains Mono fixture has 1,743 glyphs in a 1088 × 1088 RGB8 atlas. [Raw atlas](tests/fixtures/jetbrains-mono/full/atlas.rgb) · [JSON layout](tests/fixtures/jetbrains-mono/full/layout.json)
+
 ## Development
 
 Run `make headers` after editing [src/gmd2_codec.in](src/gmd2_codec.in). When packaging both codecs into one static archive, compile `bindings/encoder.c` and `bindings/decoder.c` as separate objects so the linker can select the one the caller uses.

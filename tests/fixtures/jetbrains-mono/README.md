@@ -22,3 +22,17 @@ make gmd2tool
 ./gmd2tool encode "$fixture/atlas.rgb" "$fixture/layout.json" "$fixture/atlas.gmd2" 22
 make check
 ```
+
+## Full atlas
+
+`full/atlas.rgb` is a tightly packed 1088 × 1088 RGB8 atlas with top-down rows. `full/layout.json` contains all 1,743 glyph records. Both use the same font and generator settings as the ASCII fixture, with `-allglyphs` selecting the glyphs.
+
+With `font` and `fixture` set as above, run the following from the repository root.
+
+```sh
+mkdir -p "$fixture/full"
+msdf-atlas-gen -font "$font" -fontname "JetBrains Mono Regular" \
+  -allglyphs -type msdf -size 32 -pxrange 4 -square4 -yorigin top \
+  -threads 1 -seed 0 -format bin \
+  -imageout "$fixture/full/atlas.rgb" -json "$fixture/full/layout.json"
+```
