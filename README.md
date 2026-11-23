@@ -2,6 +2,17 @@
 
 GMD2 is a lossless codec for RGB8 MSDF and RGBA8 MTSDF atlases. It ships as two standalone C headers with Odin, Go, and Rust bindings. The core emits raw GMD2 bytes that you can store directly or compress separately.
 
+## Generate a font atlas
+
+Generate an atlas from a `.ttf` or `.otf` font with the `msdf-atlas-gen` command-line tool. [msdf-atlas-gen repository](https://github.com/Chlumsky/msdf-atlas-gen)
+
+```sh
+msdf-atlas-gen -font font.ttf -type msdf -size 32 -pxrange 4 \
+  -yorigin top -format bin -imageout atlas.rgb -json layout.json
+```
+
+This writes top-down RGB8 pixels to `atlas.rgb` and the glyph layout to `layout.json`. For RGBA8 MTSDF, use `-type mtsdf` and `-imageout atlas.rgba`, then pass the pixels to the C API or a binding.
+
 ## C API
 
 Copy [gmd2_encoder.h](include/gmd2_encoder.h), [gmd2_decoder.h](include/gmd2_decoder.h), or both. For each header you use, define its implementation macro (`GMD2_ENCODER_IMPLEMENTATION` or `GMD2_DECODER_IMPLEMENTATION`) in one translation unit before including it.
@@ -11,7 +22,9 @@ Copy [gmd2_encoder.h](include/gmd2_encoder.h), [gmd2_decoder.h](include/gmd2_dec
 | Parsed msdf-atlas-gen JSON, `Gmd2Glyph` | `Gmd2AtlasView` with `y_origin` | `gmd2_encode` | `gmd2_decode` |
 | Parsed Artery Font, `Gmd2ArteryGlyph` | `Gmd2ArteryAtlasView` with `image_index` | `gmd2_encode_artery` | `gmd2_decode_artery` |
 
-Pass tightly packed, top-down pixels and use the same glyph layout for encoding and decoding. Set `y_origin` from the JSON metadata. Artery bounds use a bottom origin. The view borrows the glyph array for the call. For an empty array, pass `NULL` and a count of zero.
+Pass tightly packed, top-down pixels and use the same glyph layout for encoding and decoding. Set `y_origin` from the JSON metadata. Artery bounds use a bottom origin. The view borrows the glyph array for the call. For glyph-aware streams, the codec uses the atlas dimensions, glyph indices, atlas bounds, and coordinate origin. Keep the glyphs in the same order at both ends.
+
+To encode an atlas in row-major order without glyph metadata, pass `NULL` and a glyph count of zero to both calls. Supply the atlas dimensions in either case.
 
 ```c
 Gmd2AtlasView atlas = {
@@ -99,14 +112,17 @@ fixture=tests/fixtures/jetbrains-mono
 cmp "$fixture/atlas.rgb" restored.rgb
 ```
 
-To generate your own inputs, use `msdf-atlas-gen` with `-type msdf -yorigin top -format bin` and supply both `-imageout` and `-json`.
-
 | JetBrains Mono RGB8 atlas, 236 × 236 | Bytes |
 |---|---:|
 | Original pixels | 167,088 |
 | Raw GMD2 | 78,011 |
 | Archive CLI with Zstd level 22 | 30,324 |
 | JSON layout, supplied separately | 21,018 |
+| MessagePack layout | 7,042 |
+| MessagePack layout with Zstd level 22 | 1,508 |
+| GMD2 archive + Zstd-compressed MessagePack layout | 31,832 |
+
+The MessagePack benchmark uses the compact `FontLayoutMsgp` keys and 32-bit floats. Decompress the layout before passing it to the CLI.
 
 The JetBrains Mono fixture includes the SIL Open Font License 1.1 and its generation command. [Fixture provenance and license](tests/fixtures/jetbrains-mono/)
 
