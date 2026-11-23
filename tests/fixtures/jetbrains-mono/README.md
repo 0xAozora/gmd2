@@ -36,3 +36,9 @@ msdf-atlas-gen -font "$font" -fontname "JetBrains Mono Regular" \
   -threads 1 -seed 0 -format bin \
   -imageout "$fixture/full/atlas.rgb" -json "$fixture/full/layout.json"
 ```
+
+To regenerate `full/atlas.webp`, rerun the atlas command with `-format png` and `-imageout "$font_dir/atlas.png"`, then run the lossless WebP encoder.
+
+```sh
+cwebp -lossless -z 9 -exact "$font_dir/atlas.png" -o "$fixture/full/atlas.webp"
+```

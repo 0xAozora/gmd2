@@ -126,7 +126,7 @@ The MessagePack benchmark uses the compact `FontLayoutMsgp` keys and 32-bit floa
 
 The JetBrains Mono fixture includes the SIL Open Font License 1.1 and its generation command. [Fixture provenance and license](tests/fixtures/jetbrains-mono/)
 
-The full JetBrains Mono fixture has 1,743 glyphs in a 1088 × 1088 RGB8 atlas. [Raw atlas](tests/fixtures/jetbrains-mono/full/atlas.rgb) · [JSON layout](tests/fixtures/jetbrains-mono/full/layout.json)
+The full JetBrains Mono fixture has 1,743 glyphs in a 1088 × 1088 RGB8 atlas. [Raw atlas](tests/fixtures/jetbrains-mono/full/atlas.rgb) · [Lossless WebP](tests/fixtures/jetbrains-mono/full/atlas.webp) · [JSON layout](tests/fixtures/jetbrains-mono/full/layout.json)
 
 ## Development
 
