@@ -129,3 +129,8 @@ cargo test --manifest-path bindings/rust/Cargo.toml
 
 - Historical RGB8 Zstd archive format and C implementation notes. [Markdown](docs/GMD2_Format_and_C_Implementation.md) · [PDF](docs/GMD2_Format_and_C_Implementation.pdf)
 - Adelle Mono research and benchmark results. [Markdown](docs/GMD2_Research_Report.md) · [PDF](docs/GMD2_Research_Report.pdf)
+
+## License
+
+- GPL 2.0
+- A commercial license is available. Contact us at aozora [AT] reshade.io for more information.
